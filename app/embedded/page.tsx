@@ -1,6 +1,11 @@
 'use client';
 
-import { EmbeddedOboCarTest } from '@/components/embedded-obo-car-test';
+import dynamic from 'next/dynamic';
+
+const EmbeddedOboCarTest = dynamic(
+  () => import('@/components/embedded-obo-car-test').then(mod => ({ default: mod.EmbeddedOboCarTest })),
+  { ssr: false }
+);
 
 export default function EmbeddedTestPage() {
   return (

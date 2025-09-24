@@ -1,6 +1,11 @@
 'use client';
 
-import { SimpleOboCarTest } from '@/components/simple-obo-car-test';
+import dynamic from 'next/dynamic';
+
+const SimpleOboCarTest = dynamic(
+  () => import('@/components/simple-obo-car-test').then(mod => ({ default: mod.SimpleOboCarTest })),
+  { ssr: false }
+);
 
 export default function TestPage() {
   return (

@@ -1,6 +1,11 @@
 "use client"
 
-import OboCarPyodideComponent from "@/components/obocar-pyodide-component"
+import dynamic from 'next/dynamic';
+
+const OboCarPyodideComponent = dynamic(
+  () => import('@/components/obocar-pyodide-component'),
+  { ssr: false }
+);
 
 export default function PythonPage() {
   return (
