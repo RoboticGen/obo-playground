@@ -19,9 +19,22 @@ export function SimpleOboCarTest() {
     setOutput('Loading Pyodide...\n');
     
     try {
-      // Load Pyodide
-      const { loadPyodide } = await import('pyodide');
-      const pyodideInstance = await loadPyodide();
+      // Load Pyodide from CDN to avoid webpack issues
+      if (!(window as any).loadPyodide) {
+        // Dynamically load the Pyodide script
+        const script = document.createElement('script');
+        script.src = 'https://cdn.jsdelivr.net/pyodide/v0.24.1/full/pyodide.js';
+        script.async = true;
+        document.head.appendChild(script);
+        
+        // Wait for script to load
+        await new Promise((resolve, reject) => {
+          script.onload = resolve;
+          script.onerror = reject;
+        });
+      }
+      
+      const pyodideInstance = await (window as any).loadPyodide();
       
       setOutput(prev => prev + 'Pyodide loaded successfully!\n');
       

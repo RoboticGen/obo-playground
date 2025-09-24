@@ -1,6 +1,11 @@
 'use client';
 
-import { PyodideDebugTest } from '@/components/pyodide-debug-test';
+import dynamic from 'next/dynamic';
+
+const PyodideDebugTest = dynamic(
+  () => import('@/components/pyodide-debug-test').then(mod => ({ default: mod.PyodideDebugTest })),
+  { ssr: false }
+);
 
 export default function DebugPage() {
   return (
