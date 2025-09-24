@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Obo Car - Standalone Pyodide Test</title>
+    <script src="https://cdn.jsdelivr.net/pyodide/v0.28.2/full/pyodide.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+        .output { background: #f5f5f5; padding: 15px; border-radius: 5px; white-space: pre-wrap; font-family: monospace; }
+        .error { background: #ffebee; border-left: 4px solid #f44336; }
+        .success { background: #e8f5e8; border-left: 4px solid #4caf50; }
+        button { padding: 10px 20px; margin: 5px; cursor: pointer; }
+    </style>
+</head>
+<body>
+    <h1>🚗 Obo Car - Standalone Pyodide Test</h1>
+    <p>This is a standalone test to verify the obocar library works with Pyodide</p>
+    
+    <div>
+        <button onclick="runTest()">Run Full Test</button>
+        <button onclick="testBasicPyodide()">Test Basic Pyodide</button>
+        <button onclick="testFileLoad()">Test File Loading</button>
+        <button onclick="clearOutput()">Clear Output</button>
+    </div>
+    
+    <div id="output" class="output">Click "Run Full Test" to start...</div>
+
+    <script>
+        let pyodide = null;
+        const output = document.getElementById('output');
+        
+        function log(message) {
+            output.textContent += message + '\n';
+            console.log(message);
+        }
+        
+        function clearOutput() {
+            output.textContent = '';
+            output.className = 'output';
+        }
+        
+        async function loadPyodide() {
+            if (pyodide) return pyodide;
+            
+            log('Loading Pyodide...');
+            pyodide = await window.loadPyodide();
+            log('✅ Pyodide loaded successfully!');
+            return pyodide;
+        }
+        
+        async function testBasicPyodide() {
+            clearOutput();
+            try {
+                const pyodideInstance = await loadPyodide();
+                const result = pyodideInstance.runPython(`
+print("Hello from Pyodide!")
+result = 2 + 3
+print(f"2 + 3 = {result}")
+result
+                `);
+                log(`✅ Basic test passed! Result: ${result}`);
+                output.className = 'output success';
+            } catch (err) {
+                log(`❌ Basic test failed: ${err.message}`);
+                output.className = 'output error';
+            }
+        }
+        
+        async function testFileLoad() {
+            clearOutput();
+            try {
+                log('Testing file loading...');
+                const response = await fetch('/python/obocar.py');
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                const content = await response.text();
+                log(`✅ File loaded successfully! Size: ${content.length} characters`);
+                log(`First 200 chars: ${content.substring(0, 200)}...`);
+                output.className = 'output success';
+            } catch (err) {
+                log(`❌ File loading failed: ${err.message}`);
+                output.className = 'output error';
+            }
+        }
+        
+        async function runTest() {
+            clearOutput();
+            
+            try {
+                // Step 1: Load Pyodide
+                log('=== STEP 1: Loading Pyodide ===');
+                const pyodideInstance = await loadPyodide();
+                
+                // Step 2: Load obocar.py
+                log('=== STEP 2: Loading obocar.py ===');
+                const response = await fetch('/python/obocar.py');
+                if (!response.ok) {
+                    throw new Error(`Failed to fetch obocar.py: ${response.status} ${response.statusText}`);
+                }
+                const obocarCode = await response.text();
+                log(`✅ obocar.py loaded (${obocarCode.length} chars)`);
+                
+                // Step 3: Execute the obocar module
+                log('=== STEP 3: Executing obocar module ===');
+                pyodideInstance.runPython(obocarCode);
+                log('✅ obocar module executed');
+                
+                // Step 4: Test obocar creation
+                log('=== STEP 4: Testing obocar creation ===');
+                const testResult = pyodideInstance.runPython(`
+# Check what's available
+available = [name for name in globals() if not name.startswith('_')]
+print("Available functions/classes:", available)
+
+# Test obocar creation
+print("Creating obocar instance...")
+car = obocar()
+print(f"Car created! Position: {car.get_position()}")
+print(f"Battery: {car.battery()}%")
+
+{
+    'success': True,
+    'position': car.get_position(),
+    'battery': car.battery(),
+    'available': available
+}
+                `);
+                
+                log(`✅ obocar creation successful!`);
+                log(`Result: ${JSON.stringify(testResult, null, 2)}`);
+                
+                // Step 5: Test your original code
+                log('=== STEP 5: Testing your original code ===');
+                const finalResult = pyodideInstance.runPython(`
+# Your exact original code
+from obocar import obocar
+
+# Create a car instance
+car = obocar()
+
+# Basic movement commands
+print("🚗 Starting Obo Car simulation!")
+
+# Move forward 3 units
+car.forward(3)
+car.wait(0.5)
+
+# Check front sensor
+front_distance = car.sensor('front')
+print(f"Front sensor: {front_distance:.1f}m")
+
+# Make decisions based on sensor data
+if front_distance > 5:
+    print("Path clear, moving forward")
+    car.forward(2)
+else:
+    print("Obstacle detected, turning right")
+    car.right(90)
+    car.forward(2)
+
+# Check status
+battery = car.battery()
+distance = car.distance()
+print(f"Mission complete! Battery: {battery:.1f}%, Distance: {distance:.1f}m")
+
+{
+    'position': car.get_position(),
+    'battery': battery,
+    'distance': distance,
+    'heading': car.get_heading()
+}
+                `);
+                
+                log('🎉 YOUR ORIGINAL CODE WORKS PERFECTLY!');
+                log(`Final result: ${JSON.stringify(finalResult, null, 2)}`);
+                output.className = 'output success';
+                
+            } catch (err) {
+                log(`❌ Test failed: ${err.message}`);
+                log(`Stack trace: ${err.stack}`);
+                output.className = 'output error';
+            }
+        }
+    </script>
+</body>
+</html>

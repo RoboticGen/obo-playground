@@ -1,0 +1,59 @@
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "obocar"
+version = "0.1.0"
+description = "A lightweight Python library for car simulation compatible with Pyodide"
+authors = [
+    {name = "Obo Car Team", email = "team@obocar.dev"}
+]
+readme = "README.md"
+license = {file = "LICENSE"}
+requires-python = ">=3.7"
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Education",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.7",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Education",
+    "Topic :: Games/Entertainment :: Simulation",
+    "Topic :: Scientific/Engineering :: Physics",
+]
+keywords = ["simulation", "car", "robotics", "pyodide", "browser", "education"]
+
+# No external dependencies - only standard library
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=6.0",
+    "black>=21.0",
+    "flake8>=3.8",
+]
+
+[project.urls]
+Homepage = "https://github.com/obocar/obocar-python"
+Repository = "https://github.com/obocar/obocar-python"
+Documentation = "https://obocar.readthedocs.io"
+"Bug Reports" = "https://github.com/obocar/obocar-python/issues"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["obocar*"]
+
+[tool.black]
+line-length = 88
+target-version = ['py37']
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]

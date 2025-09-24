@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Obo Car Pyodide Integration</title>
+    <script src="https://cdn.jsdelivr.net/pyodide/v0.24.1/full/pyodide.js"></script>
+    <style>
+        body {
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        
+        h1 {
+            color: #333;
+            border-bottom: 2px solid #ddd;
+            padding-bottom: 10px;
+        }
+        
+        button {
+            background-color: #4CAF50;
+            border: none;
+            color: white;
+            padding: 10px 20px;
+            text-align: center;
+            text-decoration: none;
+            display: inline-block;
+            font-size: 16px;
+            margin: 10px 5px;
+            cursor: pointer;
+            border-radius: 4px;
+        }
+        
+        button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+        
+        pre {
+            background-color: #f5f5f5;
+            padding: 15px;
+            border-radius: 5px;
+            overflow: auto;
+            white-space: pre-wrap;
+            margin: 20px 0;
+            border-left: 4px solid #4CAF50;
+        }
+        
+        .status {
+            margin: 10px 0;
+            padding: 10px;
+            background-color: #f8f9fa;
+            border-radius: 4px;
+        }
+        
+        .output {
+            height: 300px;
+            overflow-y: auto;
+            border: 1px solid #ddd;
+            padding: 10px;
+            background-color: #f9f9f9;
+            margin-top: 20px;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Obo Car Pyodide Integration Demo</h1>
+    
+    <div class="status" id="status">Loading Pyodide...</div>
+    
+    <div>
+        <button id="runTest" disabled>Run Movement Test</button>
+        <button id="runCustom" disabled>Run Custom Code</button>
+    </div>
+    
+    <h3>Python Code:</h3>
+    <textarea id="pythonCode" rows="10" style="width: 100%;" disabled>
+from obocar import obocar
+
+# Create a car instance
+car = obocar()
+print("🚗 Starting Obo Car simulation!")
+
+# Basic movement
+car.forward(5)
+print(f"Position: {car.get_position()}")
+
+# Check sensors
+front_distance = car.sensor('front')
+print(f"Front sensor: {front_distance:.1f}m")
+
+# Turn and move more
+car.right(90)
+car.forward(3)
+print(f"New position: {car.get_position()}")
+
+# Status check
+status = car.status()
+print(f"Status: {status}")
+
+print("✅ Simulation complete!")
+    </textarea>
+    
+    <h3>Output:</h3>
+    <pre class="output" id="output"></pre>
+    
+    <script>
+        // Variables to store Pyodide instance
+        let pyodideInstance = null;
+        const statusElement = document.getElementById('status');
+        const outputElement = document.getElementById('output');
+        const pythonCodeElement = document.getElementById('pythonCode');
+        const runTestButton = document.getElementById('runTest');
+        const runCustomButton = document.getElementById('runCustom');
+        
+        // Function to append output
+        function appendOutput(text) {
+            outputElement.textContent += text + '\n';
+            outputElement.scrollTop = outputElement.scrollHeight;
+        }
+        
+        // Function to clear output
+        function clearOutput() {
+            outputElement.textContent = '';
+        }
+        
+        // Initialize Pyodide and load obocar module
+        async function initPyodide() {
+            try {
+                statusElement.textContent = 'Loading Pyodide...';
+                appendOutput('Starting Pyodide initialization...');
+                
+                // Load Pyodide
+                pyodideInstance = await loadPyodide();
+                appendOutput('✅ Pyodide loaded successfully!');
+                
+                // Load obocar.py from server
+                statusElement.textContent = 'Loading obocar module...';
+                appendOutput('Loading obocar module...');
+                
+                try {
+                    // Fetch obocar.py file
+                    const response = await fetch('/python/obocar.py');
+                    if (!response.ok) {
+                        throw new Error(`Failed to fetch obocar.py: ${response.status} ${response.statusText}`);
+                    }
+                    
+                    const obocarCode = await response.text();
+                    appendOutput('✅ obocar.py fetched successfully!');
+                    
+                    // Write to virtual filesystem
+                    pyodideInstance.FS.writeFile('obocar.py', obocarCode);
+                    appendOutput('✅ obocar.py written to virtual filesystem!');
+                    
+                    // Test import
+                    const testImport = pyodideInstance.runPython(`
+                        try:
+                            from obocar import obocar
+                            "success"
+                        except Exception as e:
+                            f"error: {str(e)}"
+                    `);
+                    
+                    if (testImport === "success") {
+                        statusElement.textContent = 'Ready! Obo Car module loaded.';
+                        appendOutput('✅ obocar module imported successfully!');
+                        
+                        // Enable buttons and textarea
+                        runTestButton.disabled = false;
+                        runCustomButton.disabled = false;
+                        pythonCodeElement.disabled = false;
+                    } else {
+                        throw new Error(testImport);
+                    }
+                } catch (error) {
+                    statusElement.textContent = 'Error loading obocar module!';
+                    appendOutput(`❌ Error: ${error.message}`);
+                    console.error(error);
+                }
+            } catch (error) {
+                statusElement.textContent = 'Failed to initialize Pyodide!';
+                appendOutput(`❌ Error initializing Pyodide: ${error.message}`);
+                console.error('Pyodide initialization error:', error);
+            }
+        }
+        
+        // Function to run Python code
+        async function runPythonCode(code) {
+            if (!pyodideInstance) {
+                appendOutput('❌ Pyodide not initialized!');
+                return;
+            }
+            
+            try {
+                appendOutput('Running Python code...');
+                appendOutput('--------------------------------------------------');
+                
+                const result = pyodideInstance.runPython(`
+                    import sys
+                    from io import StringIO
+                    
+                    # Capture stdout
+                    old_stdout = sys.stdout
+                    sys.stdout = mystdout = StringIO()
+                    
+                    try:
+                        ${code}
+                    except Exception as e:
+                        print(f"❌ Error: {type(e).__name__}: {e}")
+                    
+                    # Restore stdout and get output
+                    sys.stdout = old_stdout
+                    mystdout.getvalue()
+                `);
+                
+                appendOutput(result);
+                appendOutput('--------------------------------------------------');
+                appendOutput('✅ Code execution completed!');
+            } catch (error) {
+                appendOutput(`❌ Error executing Python code: ${error.message}`);
+                console.error('Python execution error:', error);
+            }
+        }
+        
+        // Function to run the movement test
+        async function runMovementTest() {
+            clearOutput();
+            const testCode = `
+                from obocar import obocar
+
+                car = obocar()
+                initial_pos = car.get_position()
+                car.forward(5)
+                new_pos = car.get_position()
+
+                assert new_pos != initial_pos
+                assert car.distance() == 5.0
+
+                car.right(90)
+                assert car.get_heading() == 90.0
+
+                car.left(45)
+                assert car.get_heading() == 45.0
+
+                print("✅ Movement test passed")
+            `;
+            
+            await runPythonCode(testCode);
+        }
+        
+        // Function to run custom code
+        async function runCustomCode() {
+            clearOutput();
+            const code = pythonCodeElement.value;
+            await runPythonCode(code);
+        }
+        
+        // Set up event listeners
+        runTestButton.addEventListener('click', runMovementTest);
+        runCustomButton.addEventListener('click', runCustomCode);
+        
+        // Initialize Pyodide when page loads
+        window.addEventListener('load', initPyodide);
+    </script>
+</body>
+</html>
