@@ -69,7 +69,6 @@ export interface SimulationMetrics {
   commandsExecuted: number
   collisions: number
   averageSpeed: number
-  batteryLevel: number
   executionTime: number
   pathEfficiency: number
 }
@@ -187,7 +186,6 @@ const defaultMetrics: SimulationMetrics = {
   commandsExecuted: 0,
   collisions: 0,
   averageSpeed: 0,
-  batteryLevel: 100,
   executionTime: 0,
   pathEfficiency: 0
 }

@@ -22,7 +22,6 @@ class OboChar:
         self.angle = 0.0
         self.speed = 0.0
         self.max_speed = 10.0
-        self.battery_level = 100.0
         self.total_distance = 0.0
         self.sensor_range = 20.0
         self.obstacles = self._generate_random_obstacles()
@@ -41,8 +40,7 @@ class OboChar:
         self._event_log.append({
             'event': event,
             'position': tuple(self.position),
-            'angle': self.angle,
-            'battery': self.battery_level
+            'angle': self.angle
         })
     
     def forward(self, distance):
@@ -55,7 +53,6 @@ class OboChar:
         
         self.position = [new_x, new_y]
         self.total_distance += abs(distance)
-        self.battery_level = max(0, self.battery_level - abs(distance) * 1.0)
         
         print(f"   Position: ({self.position[0]:.1f}, {self.position[1]:.1f})")
     
@@ -67,14 +64,12 @@ class OboChar:
         print(f"⬅️ Turning left {degrees} degrees...")
         self._log_event(f"left({degrees})")
         self.angle = (self.angle - degrees) % 360
-        self.battery_level = max(0, self.battery_level - 0.5)
         print(f"   New heading: {self.angle:.1f}°")
     
     def right(self, degrees):
         print(f"➡️ Turning right {degrees} degrees...")
         self._log_event(f"right({degrees})")
         self.angle = (self.angle + degrees) % 360
-        self.battery_level = max(0, self.battery_level - 0.5)
         print(f"   New heading: {self.angle:.1f}°")
     
     def sensor(self, direction='front'):
@@ -107,8 +102,7 @@ class OboChar:
         self._log_event(f"sensor({direction}) = {result:.1f}")
         return result
     
-    def battery(self):
-        return round(self.battery_level, 1)
+
     
     def distance(self):
         return round(self.total_distance, 1)
@@ -127,7 +121,6 @@ class OboChar:
         return {
             'position': self.get_position(),
             'heading': self.get_heading(),
-            'battery': self.battery(),
             'distance': self.distance(),
             'speed': round(self.speed, 1),
         }
@@ -136,7 +129,6 @@ class OboChar:
         self.position = [0.0, 0.0]
         self.angle = 0.0
         self.speed = 0.0
-        self.battery_level = 100.0
         self.total_distance = 0.0
         self.obstacles = self._generate_random_obstacles()
         self._event_log = []
@@ -175,8 +167,7 @@ car = obocar()
 print(f"Test car created at {car.get_position()}")
 {
     'success': True,
-    'position': car.get_position(),
-    'battery': car.battery()
+    'position': car.get_position()
 }
       `);
       
@@ -222,13 +213,11 @@ else:
     car.forward(2)
 
 # Check status
-battery = car.battery()
 distance = car.distance()
-print(f"Mission complete! Battery: {battery:.1f}%, Distance: {distance:.1f}m")
+print(f"Mission complete! Distance: {distance:.1f}m")
 
 {
     'position': car.get_position(),
-    'battery': battery,
     'distance': distance,
     'heading': car.get_heading()
 }

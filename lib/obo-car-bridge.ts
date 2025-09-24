@@ -97,12 +97,7 @@ class OboCarBridge {
         return distance
       },
 
-      getBattery: () => {
-        const store = this.getStore()
-        const battery = store.metrics.batteryLevel
-        console.log(`🔗 Bridge: Getting battery: ${battery}%`)
-        return battery
-      },
+
 
       getSpeed: () => {
         const store = this.getStore()

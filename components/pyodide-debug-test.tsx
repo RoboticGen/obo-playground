@@ -73,11 +73,11 @@ try:
     car = obocar()
     print(f"✅ Car created successfully!")
     print(f"Position: {car.get_position()}")
-    print(f"Battery: {car.battery()}%")
+
     result = {
         'success': True,
         'position': car.get_position(),
-        'battery': car.battery(),
+
         'heading': car.get_heading()
     }
 except Exception as e:
@@ -148,14 +148,13 @@ else:
     car.forward(2)
 
 # Check status
-battery = car.battery()
 distance = car.distance()
-print(f"Mission complete! Battery: {battery:.1f}%, Distance: {distance:.1f}m")
+print(f"Mission complete! Distance: {distance:.1f}m")
 
 # Return final status for JavaScript
 {
     'position': car.get_position(),
-    'battery': battery,
+
     'distance': distance,
     'heading': car.get_heading()
 }

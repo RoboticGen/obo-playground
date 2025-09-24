@@ -123,7 +123,6 @@ class OboCarBridge {
         position: [pos.x, pos.y, pos.z],
         rotation: rotation,
         speed: store.carPhysics.velocity.length(),
-        battery: store.metrics.batteryLevel,
         distance: store.metrics.distanceTraveled,
         isRunning: store.isRunning,
         currentState: store.carAnimation.currentState

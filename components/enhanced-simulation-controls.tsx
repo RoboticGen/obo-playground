@@ -291,10 +291,6 @@ export function SimulationControls() {
               <span>Commands:</span>
               <span>{metrics.commandsExecuted}</span>
             </div>
-            <div className="flex justify-between">
-              <span>Battery:</span>
-              <span>{metrics.batteryLevel.toFixed(0)}%</span>
-            </div>
           </div>
         </div>
       </CardContent>

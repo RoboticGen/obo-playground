@@ -42,13 +42,13 @@ export function SimpleOboCarTest() {
 print("Testing obocar creation...")
 car = obocar()
 print(f"Car created at position: {car.get_position()}")
-print(f"Car battery: {car.battery()}%")
+
 print("Basic test completed!")
 
 # Return some data to JavaScript
 {
     'position': car.get_position(),
-    'battery': car.battery(),
+
     'heading': car.get_heading()
 }
       `);
@@ -99,14 +99,13 @@ else:
     car.forward(2)
 
 # Check status
-battery = car.battery()
 distance = car.distance()
-print(f"Mission complete! Battery: {battery:.1f}%, Distance: {distance:.1f}m")
+print(f"Mission complete! Distance: {distance:.1f}m")
 
 # Return final status
 {
     'position': car.get_position(),
-    'battery': battery,
+
     'distance': distance,
     'heading': car.get_heading()
 }
@@ -147,7 +146,7 @@ print(f"Front sensor: {front_sensor:.1f}m")
 {
     'position': test_car.get_position(),
     'heading': test_car.get_heading(),
-    'battery': test_car.battery(),
+
     'front_sensor': front_sensor
 }
       `);

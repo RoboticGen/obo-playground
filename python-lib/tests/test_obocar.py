@@ -17,7 +17,6 @@ def test_car_creation():
     assert isinstance(car, OboChar)
     assert car.get_position() == (0.0, 0.0)
     assert car.get_heading() == 0.0
-    assert car.battery() == 100.0
     assert car.distance() == 0.0
     print("✅ Car creation test passed")
 
@@ -61,21 +60,7 @@ def test_sensors():
     
     print("✅ Sensor test passed")
 
-def test_battery_consumption():
-    """Test battery consumption during movement."""
-    car = obocar()
-    initial_battery = car.battery()
-    
-    # Move and check battery decreased
-    car.forward(10)
-    assert car.battery() < initial_battery
-    
-    # Turn and check battery decreased (small amount)
-    battery_before_turn = car.battery()
-    car.right(90)
-    assert car.battery() < battery_before_turn
-    
-    print("✅ Battery consumption test passed")
+
 
 def test_obstacle_interaction():
     """Test obstacle-related functions."""
@@ -100,7 +85,7 @@ def test_status_methods():
     # Test status method
     status = car.status()
     assert isinstance(status, dict)
-    required_keys = ['position', 'heading', 'battery', 'distance', 'speed']
+    required_keys = ['position', 'heading', 'distance', 'speed']
     for key in required_keys:
         assert key in status
     
@@ -124,14 +109,12 @@ def test_reset_functionality():
     # Verify changes
     assert car.get_position() != (0.0, 0.0)
     assert car.get_heading() != 0.0
-    assert car.battery() < 100.0
     assert car.distance() > 0.0
     
     # Reset and verify
     car.reset()
     assert car.get_position() == (0.0, 0.0)
     assert car.get_heading() == 0.0
-    assert car.battery() == 100.0
     assert car.distance() == 0.0
     
     print("✅ Reset functionality test passed")
@@ -167,7 +150,6 @@ def run_all_tests():
         test_car_creation,
         test_movement,
         test_sensors,
-        test_battery_consumption,
         test_obstacle_interaction,
         test_status_methods,
         test_reset_functionality,

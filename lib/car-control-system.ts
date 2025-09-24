@@ -11,7 +11,6 @@ export interface CarState {
     right: number
     back: number
   }
-  battery: number
   distanceTraveled: number
   executionTime: number
   pathHistory: [number, number, number][]
@@ -50,7 +49,6 @@ export const useSimulationStore = create<
     togglePause: () => void
     setSpeed: (speed: number) => void
     incrementCollision: () => void
-    updateBattery: (battery: number) => void
     setIsRunning: (running: boolean) => void
   }
 >((set, get) => ({
@@ -68,7 +66,6 @@ export const useSimulationStore = create<
       right: 10,
       back: 10,
     },
-    battery: 100,
     distanceTraveled: 0,
     executionTime: 0,
     pathHistory: [],
@@ -138,7 +135,6 @@ export const useSimulationStore = create<
         velocity: 0,
         isMoving: false,
         sensorReadings: { front: 10, left: 10, right: 10, back: 10 },
-        battery: 100,
         distanceTraveled: 0,
         executionTime: 0,
         pathHistory: [],
@@ -161,11 +157,6 @@ export const useSimulationStore = create<
       },
     })),
 
-  updateBattery: (battery) =>
-    set((state) => ({
-      car: { ...state.car, battery },
-    })),
-    
   setIsRunning: (running) =>
     set(() => ({
       isRunning: running,
@@ -243,14 +234,7 @@ export class CarControlAPI {
     return car.sensorReadings[direction]
   }
 
-  /**
-   * Get battery level
-   * @returns Battery level as percentage
-   */
-  getBattery(): number {
-    const { car } = useSimulationStore.getState()
-    return car.battery
-  }
+
 
   /**
    * Get total distance traveled

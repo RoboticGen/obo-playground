@@ -11,7 +11,6 @@ import { useSimulationStore } from "@/lib/car-control-system"
 interface MetricHistory {
   time: number
   velocity: number
-  battery: number
   frontSensor: number
   leftSensor: number
   rightSensor: number
@@ -34,7 +33,6 @@ export function MetricsDashboard() {
           const newEntry: MetricHistory = {
             time: currentTime,
             velocity: car.velocity,
-            battery: car.battery,
             frontSensor: car.sensorReadings.front,
             leftSensor: car.sensorReadings.left,
             rightSensor: car.sensorReadings.right,
@@ -106,20 +104,12 @@ export function MetricsDashboard() {
       {/* Battery & Performance */}
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="text-sm flex items-center gap-2">
+          <CardTitle className="text-sm font-medium flex items-center gap-2">
             <Zap className="w-4 h-4" />
-            Battery & Performance
+            Performance
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-medium">Battery Level</span>
-              <span className="text-sm text-muted-foreground">{car.battery.toFixed(0)}%</span>
-            </div>
-            <Progress value={car.battery} className="h-2" />
-          </div>
-
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <span className="text-sm font-medium">Command Progress</span>
@@ -129,7 +119,7 @@ export function MetricsDashboard() {
             </div>
             <Progress value={commandProgress} className="h-2" />
           </div>
-
+          
           <div className="grid grid-cols-2 gap-3 pt-2">
             <div className="text-center">
               <div className="text-lg font-bold text-chart-4">{car.collisionCount}</div>
@@ -256,9 +246,6 @@ export function MetricsDashboard() {
       {/* Status Badges */}
       <div className="flex flex-wrap gap-2">
         <Badge variant={isRunning ? "default" : "secondary"}>{isRunning ? "Running" : "Stopped"}</Badge>
-        <Badge variant={car.battery > 20 ? "secondary" : "destructive"}>
-          Battery {car.battery > 20 ? "OK" : "Low"}
-        </Badge>
         <Badge variant={car.sensorReadings.front > 2 ? "secondary" : "destructive"}>
           {car.sensorReadings.front > 2 ? "Path Clear" : "Obstacle"}
         </Badge>

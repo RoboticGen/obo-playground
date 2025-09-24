@@ -21,7 +21,6 @@ class OboChar:
         self.angle = 0.0  # heading in degrees (0 = north)
         self.speed = 0.0  # current speed
         self.max_speed = 10.0  # maximum speed units per second
-        self.battery_level = 100.0  # battery percentage
         self.total_distance = 0.0  # total distance traveled
         self.sensor_range = 20.0  # sensor detection range
         self.obstacles = self._generate_random_obstacles()
@@ -53,8 +52,7 @@ class OboChar:
             'timestamp': time.time(),
             'event': event,
             'position': tuple(self.position),
-            'angle': self.angle,
-            'battery': self.battery_level
+            'angle': self.angle
         })
     
     def forward(self, distance: float) -> None:
@@ -74,10 +72,6 @@ class OboChar:
         
         self.position = [new_x, new_y]
         self.total_distance += abs(distance)
-        
-        # Consume battery (1% per unit of distance)
-        battery_consumption = abs(distance) * 1.0
-        self.battery_level = max(0, self.battery_level - battery_consumption)
         
         print(f"   Position: ({self.position[0]:.1f}, {self.position[1]:.1f})")
         
@@ -104,9 +98,6 @@ class OboChar:
         print(f"⬅️ Turning left {degrees} degrees...")
         self._log_event(f"left({degrees})")
         self.angle = (self.angle - degrees) % 360
-        
-        # Small battery consumption for turning
-        self.battery_level = max(0, self.battery_level - 0.5)
         print(f"   New heading: {self.angle:.1f}°")
     
     def right(self, degrees: float) -> None:
@@ -119,9 +110,6 @@ class OboChar:
         print(f"➡️ Turning right {degrees} degrees...")
         self._log_event(f"right({degrees})")
         self.angle = (self.angle + degrees) % 360
-        
-        # Small battery consumption for turning
-        self.battery_level = max(0, self.battery_level - 0.5)
         print(f"   New heading: {self.angle:.1f}°")
     
     def sensor(self, direction: str = 'front') -> float:
@@ -172,14 +160,7 @@ class OboChar:
         self._log_event(f"sensor({direction}) = {result:.1f}")
         return result
     
-    def battery(self) -> float:
-        """
-        Get current battery level.
-        
-        Returns:
-            Battery level as percentage (0-100)
-        """
-        return round(self.battery_level, 1)
+
     
     def distance(self) -> float:
         """
@@ -231,7 +212,6 @@ class OboChar:
         return {
             'position': self.get_position(),
             'heading': self.get_heading(),
-            'battery': self.battery(),
             'distance': self.distance(),
             'speed': round(self.speed, 1),
             'obstacles_nearby': self._count_nearby_obstacles()
@@ -248,7 +228,6 @@ class OboChar:
             
             if distance < collision_distance:
                 print(f"⚠️ COLLISION! Hit obstacle at ({obstacle_x:.1f}, {obstacle_y:.1f})")
-                self.battery_level = max(0, self.battery_level - 10)  # Collision penalty
                 return True
         
         return False
@@ -300,7 +279,6 @@ class OboChar:
         self.position = [0.0, 0.0]
         self.angle = 0.0
         self.speed = 0.0
-        self.battery_level = 100.0
         self.total_distance = 0.0
         self.obstacles = self._generate_random_obstacles()
         self._event_log = []
