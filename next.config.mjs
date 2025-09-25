@@ -9,8 +9,11 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
+  experimental: {
+    esmExternals: 'loose',
+  },
   webpack: (config, { isServer }) => {
-    // Handle Pyodide completely on client side only
+    // Handle Node.js modules completely on client side
     if (!isServer) {
       config.resolve.fallback = {
         ...config.resolve.fallback,
@@ -21,12 +24,22 @@ const nextConfig = {
         "node:path": false,
         "node:url": false,
         "node:util": false,
+        "node:os": false,
+        "node:stream": false,
+        "node:buffer": false,
         "child_process": false,
         "crypto": false,
         "fs": false,
         "path": false,
         "url": false,
         "util": false,
+        "os": false,
+        "stream": false,
+        "buffer": false,
+        "assert": false,
+        "events": false,
+        "querystring": false,
+        "zlib": false,
       };
     }
 
@@ -40,13 +53,39 @@ const nextConfig = {
       {
         message: /UnhandledSchemeError.*node:/,
       },
+      {
+        message: /Can't resolve 'node:/,
+      },
+      {
+        message: /Module not found.*node:/,
+      },
     ];
 
     // Add rules to handle Node.js built-in modules with null-loader
-    config.module.rules.push({
-      test: /^node:/,
-      use: 'null-loader',
-    });
+    config.module.rules.push(
+      {
+        test: /^node:/,
+        use: 'null-loader',
+      },
+      {
+        test: /node_modules.*\.(mjs|js)$/,
+        resolve: {
+          fullySpecified: false,
+        },
+      }
+    );
+
+    // Exclude problematic modules from being processed
+    config.externals = config.externals || [];
+    if (!isServer) {
+      config.externals.push({
+        'node:path': 'commonjs node:path',
+        'node:fs': 'commonjs node:fs',
+        'node:url': 'commonjs node:url',
+        'node:crypto': 'commonjs node:crypto',
+        'node:util': 'commonjs node:util',
+      });
+    }
 
     return config;
   },
