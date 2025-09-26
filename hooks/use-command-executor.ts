@@ -83,6 +83,10 @@ export function usePythonCodeParser() {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error'
       setExecutionError(errorMessage)
       console.error('Code execution error:', error)
+      // Send to terminal if available
+      if (window.terminalOutput) {
+        window.terminalOutput(`Code execution error: ${errorMessage}`, 'error')
+      }
     }
   }, [parseAndExecuteCode, setExecutionError])
 

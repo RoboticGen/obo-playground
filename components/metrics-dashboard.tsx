@@ -22,6 +22,13 @@ export function MetricsDashboard() {
   const { car, isRunning, commands } = useSimulationStore()
   const [metricHistory, setMetricHistory] = useState<MetricHistory[]>([])
   const [startTime, setStartTime] = useState<number>(Date.now())
+  
+  // Log execution to terminal if available
+  useEffect(() => {
+    if (isRunning && window.terminalOutput) {
+      window.terminalOutput("Simulation started", "info")
+    }
+  }, [isRunning]);
 
   // Update metrics history
   useEffect(() => {

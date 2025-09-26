@@ -436,7 +436,7 @@ print(f"Mission complete! Battery: {battery:.1f}%, Distance: {distance:.1f}m")`;
             <CardHeader className="pb-3">
               <CardTitle>3D Simulation</CardTitle>
             </CardHeader>
-            <CardContent className="p-0 h-[400px]">
+            <CardContent className="p-0 h-[200px]">
               <div className="w-full h-full rounded-lg overflow-hidden bg-gradient-to-b from-sky-200 to-sky-100">
                 <Canvas camera={{ position: [10, 10, 10], fov: 50 }} shadows>
                   <Suspense
