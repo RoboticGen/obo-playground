@@ -10,26 +10,26 @@ const defaultCode = `from obocar import obocar
 
 # Create a car instance
 car = obocar()
-print("🚗 Starting Obo Car simulation!")
+terminal_print("🚗 Starting Obo Car simulation!")
 
 # Basic movement
 car.forward(5)
-print(f"Position: {car.get_position()}")
+terminal_print(f"Position: {car.get_position()}")
 
 # Check sensors
 front_distance = car.sensor('front')
-print(f"Front sensor: {front_distance:.1f}m")
+terminal_print(f"Front sensor: {front_distance:.1f}m")
 
 # Turn and move more
 car.right(90)
 car.forward(3)
-print(f"New position: {car.get_position()}")
+terminal_print(f"New position: {car.get_position()}")
 
 # Status check
 status = car.status()
-print(f"Status: {status}")
+terminal_print(f"Status: {status}")
 
-print("✅ Simulation complete!")`
+terminal_print("✅ Simulation complete!")`
 
 interface PyodideInterface {
   runPython: (code: string) => any
@@ -69,6 +69,7 @@ declare global {
     carControlAPI: CarControlAPI
     oboCarAPI: OboCarAPI
     pyodideInstance: any
+    terminalOutput?: (message: string, type?: 'info' | 'error' | 'warning' | 'success') => void
   }
 }
 
@@ -158,7 +159,20 @@ class OutputCapture:
         if text.strip():
             self.output.append(text.strip())
             from js import window
-            window.oboCarAPI.log(text.strip())
+            
+            # Try to log using oboCarAPI if available
+            try:
+                if hasattr(window, 'oboCarAPI') and hasattr(window.oboCarAPI, 'log'):
+                    window.oboCarAPI.log(text.strip())
+            except Exception:
+                pass  # Safely ignore any errors with oboCarAPI
+                
+            # Always try to use terminal output if available
+            try:
+                if hasattr(window, 'terminalOutput'):
+                    window.terminalOutput(text.strip(), 'info')
+            except Exception:
+                pass  # Safely ignore any errors with terminal output
     
     def flush(self):
         pass
@@ -459,25 +473,74 @@ print("✅ obocar module imported successfully")`
       const result = await pyodide.runPythonAsync(`
 import sys
 from io import StringIO
+from js import window
 
-# Capture stdout
-old_stdout = sys.stdout
-sys.stdout = mystdout = StringIO()
+# Create a custom stdout handler that forwards to the terminal
+class TerminalOutput:
+    def write(self, text):
+        if hasattr(window, 'terminalOutput') and text.strip():
+            window.terminalOutput(text.strip(), 'info')
+        return len(text)
+    
+    def flush(self):
+        pass
+
+# Capture stdout with our custom handler
+terminal_stdout = TerminalOutput()
 
 try:
+    # Set up a custom print function that ensures terminal visibility
+    def terminal_print(*args, **kwargs):
+        # Get the regular print output
+        output = " ".join(str(arg) for arg in args)
+        
+        # Always print to stdout first to ensure it's captured
+        print(*args, **kwargs)
+        
+        # Then try to send to terminal using oboCarAPI's log function
+        try:
+            from js import window
+            if hasattr(window, 'oboCarAPI') and hasattr(window.oboCarAPI, 'log'):
+                window.oboCarAPI.log(output)
+            elif hasattr(window, 'terminalOutput'):
+                window.terminalOutput(output, 'info')
+        except Exception as terminal_err:
+            # Safely ignore any errors with terminal output
+            print(f"Terminal output error: {terminal_err}")
+
+    # Make the terminal_print function available in the global scope
+    globals()['terminal_print'] = terminal_print
+    
+    # Ensure all print statements are immediately visible in the terminal
+    print("🚗 Running Python code...")
+    terminal_print("📝 Tip: Use terminal_print() instead of print() to ensure output is visible")
+    
 ${modifiedCode.split('\n').map(line => '    ' + line).join('\n')}
 except Exception as e:
-    print(f"❌ Error: {type(e).__name__}: {e}")
+    error_msg = f"❌ Error: {type(e).__name__}: {e}"
+    print(error_msg)
+    if hasattr(window, 'terminalOutput'):
+        window.terminalOutput(error_msg, 'error')
     import traceback
-    traceback.print_exc()
+    traceback.print_exc(file=terminal_stdout)
 
-# Restore stdout and get output
-sys.stdout = old_stdout
-mystdout.getvalue()
+# Return a success message
+"✅ Code execution complete"
       `)
 
       // Get captured output from both sources
       const capturedOutput = pyodide.globals.get("output_capture").output.toJs()
+      
+      // Send output to terminal
+      const terminalOutput = window.terminalOutput;
+      if (terminalOutput) {
+        terminalOutput("📋 Code Execution Results:", "success");
+        // Send each line to the terminal
+        capturedOutput.forEach((line: string) => {
+          terminalOutput(line, "info");
+        });
+        terminalOutput("✅ Code execution complete", "success");
+      }
       
       // Update the output state with both the result string and the captured output
       setOutput(prev => [
@@ -490,6 +553,13 @@ mystdout.getvalue()
     } catch (err: any) {
       setError(err.message)
       console.error("[v0] Python execution error:", err)
+      
+      // Send error to terminal
+      const terminalOutput = window.terminalOutput;
+      if (terminalOutput) {
+        terminalOutput("❌ Python Execution Error", "error");
+        terminalOutput(err.message, "error");
+      }
     } finally {
       setIsRunning(false)
       setSimulationRunning(false) // Set simulation as stopped
@@ -552,56 +622,21 @@ mystdout.getvalue()
       </div>
 
       <div className="flex-1 flex flex-col">
-        <div className="flex-1 grid grid-rows-2 gap-2">
-          <textarea
-            ref={textareaRef}
-            value={code}
-            onChange={(e) => setCode(e.target.value)}
-            className="p-4 font-mono text-sm bg-muted/30 border-0 resize-none focus:outline-none focus:ring-2 focus:ring-primary/20 h-full"
-            placeholder="Write your MicroPython code here..."
-            spellCheck={false}
-          />
-
-          {/* Output Panel - Always visible */}
-          <div className="border bg-muted/20 overflow-y-auto rounded-md h-full flex flex-col">
-            <div className="p-2 border-b bg-muted/30 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-medium">Console Output</span>
-              </div>
-              <Button 
-                onClick={() => setOutput([])} 
-                variant="ghost" 
-                size="sm" 
-                className="h-6 px-2 text-xs"
-              >
-                Clear
-              </Button>
-            </div>
-
-            <div className="p-3 flex-1 overflow-auto">
-              {error && (
-                <Alert className="mb-2 border-destructive/50 bg-destructive/10">
-                  <AlertCircle className="h-4 w-4" />
-                  <AlertDescription className="font-mono text-xs">{error}</AlertDescription>
-                </Alert>
-              )}
-
-              <div className="font-mono text-xs space-y-1">
-                {output.length > 0 ? (
-                  output.map((line, i) => (
-                    <div key={i} className="text-muted-foreground">
-                      {line}
-                    </div>
-                  ))
-                ) : (
-                  <div className="text-muted-foreground italic">
-                    Run your code to see output here...
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
+        <textarea
+          ref={textareaRef}
+          value={code}
+          onChange={(e) => setCode(e.target.value)}
+          className="p-4 font-mono text-sm bg-muted/30 border-0 resize-none focus:outline-none focus:ring-2 focus:ring-primary/20 h-full flex-1"
+          placeholder="Write your MicroPython code here..."
+          spellCheck={false}
+        />
+        
+        {error && (
+          <Alert className="mt-2 border-destructive/50 bg-destructive/10">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription className="font-mono text-xs">{error}</AlertDescription>
+          </Alert>
+        )}
       </div>
 
       <div className="p-3 border-t bg-muted/20">

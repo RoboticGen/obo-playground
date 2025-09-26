@@ -235,6 +235,16 @@ class OboCarBridge {
       const distance = store.metrics.distanceTraveled
       console.log(`📏 oboCarAPI.distanceTraveled accessed, returning ${distance}`)
       return distance
+    },
+    
+    // Log method for Python to use
+    log: (message: string) => {
+      console.log(`📝 [Python]: ${message}`)
+      // Forward to terminal if available
+      if (window.terminalOutput) {
+        window.terminalOutput(message, 'info')
+      }
+      return true
     }
     }
 
