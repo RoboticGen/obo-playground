@@ -194,14 +194,14 @@ print("✅ Simulation complete!")`);
         // Replace the import with an approach that will work with our filesystem setup
         modifiedCode = modifiedCode.replace(
           'from obocar import obocar', 
-          'from js import pyodideInstance\nobocarModule = pyodideInstance.pyimport("obocar")\nobocar = obocarModule.obocar'
+          'from js import pyodideInstance\n__BROWSER__ = True  # Set flag to prevent demo code from running\nobocarModule = pyodideInstance.pyimport("obocar")\nobocar = obocarModule.obocar'
         );
       } else if (code.includes('import obocar')) {
         appendOutput('Detected "import obocar" - using appropriate import method');
         // Replace the import with an approach that will work with our filesystem setup
         modifiedCode = modifiedCode.replace(
           'import obocar', 
-          'from js import pyodideInstance\nobocarModule = pyodideInstance.pyimport("obocar")'
+          'from js import pyodideInstance\n__BROWSER__ = True  # Set flag to prevent demo code from running\nobocarModule = pyodideInstance.pyimport("obocar")'
         );
       }
       

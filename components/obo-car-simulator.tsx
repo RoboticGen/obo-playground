@@ -380,30 +380,23 @@ from obocar import obocar
 # Create a car instance
 car = obocar()
 
-# Basic movement commands
-print("🚗 Starting Obo Car simulation!")
+# This is a template - code won't run automatically
+# You need to press "Execute Code" button to run your code
 
-# Move forward 3 units
-car.forward(3)
-car.wait(0.5)
 
-# Check front sensor
-front_distance = car.sensor('front')
-print(f"Front sensor: {front_distance:.1f}m")
+car.wait(0.5)     # Wait for 0.5 seconds
 
-# Make decisions based on sensor data
-if front_distance > 5:
-    print("Path clear, moving forward")
-    car.forward(2)
-else:
-    print("Obstacle detected, turning right")
-    car.right(90)
-    car.forward(2)
+# Get sensor readings:
+# front_distance = car.sensor('front')
+# left_distance = car.sensor('left')
+# right_distance = car.sensor('right')
 
-# Check status
-battery = car.battery()
-distance = car.distance()
-print(f"Mission complete! Battery: {battery:.1f}%, Distance: {distance:.1f}m")`;
+# Check car status:
+# battery = car.battery()
+# position = car.position()
+# distance = car.distance()
+
+print("✅ Ready to write your code and press 'Execute Code'")`;
 
   if (!isInitialized) {
     return (
@@ -436,7 +429,7 @@ print(f"Mission complete! Battery: {battery:.1f}%, Distance: {distance:.1f}m")`;
             <CardHeader className="pb-3">
               <CardTitle>3D Simulation</CardTitle>
             </CardHeader>
-            <CardContent className="p-0 h-[200px]">
+            <CardContent className="p-0 h-[400px]">
               <div className="w-full h-full rounded-lg overflow-hidden bg-gradient-to-b from-sky-200 to-sky-100">
                 <Canvas camera={{ position: [10, 10, 10], fov: 50 }} shadows>
                   <Suspense
@@ -611,7 +604,7 @@ print(f"Mission complete! Battery: {battery:.1f}%, Distance: {distance:.1f}m")`;
               <Textarea
                 value={customCode}
                 onChange={(e) => setCustomCode(e.target.value)}
-                placeholder={defaultCode}
+                placeholder="Write your Python code here... (Press 'Execute Code' to run)"
                 className="font-mono text-sm min-h-[300px]"
               />
               <div className="flex gap-2">
@@ -625,7 +618,7 @@ print(f"Mission complete! Battery: {battery:.1f}%, Distance: {distance:.1f}m")`;
                   onClick={() => setCustomCode(defaultCode)}
                   variant="outline"
                 >
-                  Load Example
+                  Load Template
                 </Button>
                 <Button 
                   onClick={() => setCustomCode('')}

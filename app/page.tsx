@@ -29,7 +29,6 @@ export default function OboPlayground() {
 
   const handleExecuteCode = async () => {
     if (!currentCode.trim()) return
-    
     const validation = validatePythonSyntax(currentCode)
     if (!validation.isValid) {
       console.error("Syntax errors:", validation.errors)
