@@ -14,13 +14,18 @@ class OboCarBridge {
     (window as any).oboCarAPI = {
       // Movement commands that Python calls
       move: (distance: number) => {
-        console.log(`� Bridge: Moving car ${distance} units`)
+        // If negative distance, use backward command
+        if (distance < 0) {
+          return (window as any).oboCarAPI.backward(Math.abs(distance));
+        }
+        
+        console.log(`🚗 Bridge: Moving car forward ${distance} units`)
         const store = this.getStore()
         
         store.addCommand({
           type: 'forward',
           value: distance,
-          duration: distance * 1000
+          duration: Math.abs(distance) * 1000
         })
         
         // Start execution if not already running
@@ -30,15 +35,16 @@ class OboCarBridge {
         
         return true
       },
-
-      rotate: (angle: number) => {
-        console.log(`� Bridge: Rotating car ${angle} degrees`)
+      
+      // Dedicated backward method
+      backward: (distance: number) => {
+        console.log(`🚗 Bridge: Moving car backward ${distance} units`)
         const store = this.getStore()
         
         store.addCommand({
-          type: angle > 0 ? 'turn_right' : 'turn_left',
-          value: Math.abs(angle),
-          duration: (Math.abs(angle) / 90) * 1000
+          type: 'backward',
+          value: Math.abs(distance), // Ensure positive value
+          duration: Math.abs(distance) * 1000 // Ensure positive duration
         })
         
         // Start execution if not already running
@@ -49,8 +55,33 @@ class OboCarBridge {
         return true
       },
 
-      // Turn method for compatibility
+      // Rotation methods to control car orientation
+      rotate: (angle: number) => {
+        console.log(`🔄 Bridge: Rotating car ${angle} degrees`)
+        const store = this.getStore()
+        
+        // Determine the rotation type based on the angle
+        const rotationType = angle > 0 ? 'turn_right' : 'turn_left'
+        const rotationValue = Math.abs(angle)
+        const rotationDuration = (rotationValue / 90) * 1000
+        
+        store.addCommand({
+          type: rotationType,
+          value: rotationValue,
+          duration: rotationDuration
+        })
+        
+        // Start execution if not already running
+        if (!store.isRunning) {
+          store.setRunning(true)
+        }
+        
+        return true
+      },
+
+      // Turn method for compatibility - alias for rotate
       turn: (angle: number) => {
+        // Use the rotate method directly since we're in the same object
         return (window as any).oboCarAPI.rotate(angle)
       },
 
@@ -74,17 +105,22 @@ class OboCarBridge {
     setPosition: (x: number, y: number, z: number) => {
       console.log(`📍 oboCarAPI.setPosition(${x}, ${y}, ${z}) called from Python`)
       const store = useSimulationStore.getState()
+      // Allow full 3D positioning
       const newPos = new THREE.Vector3(x, y, z)
       store.updateCarPosition(newPos)
       return true
     },
 
-    // Set car rotation (for teleporting)
+    // Set car rotation (in degrees)
     setRotation: (angle: number) => {
       console.log(`🧭 oboCarAPI.setRotation(${angle}°) called from Python`)
       const store = useSimulationStore.getState()
-      const newRot = new THREE.Euler(0, angle * (Math.PI / 180), 0)
-      store.updateCarRotation(newRot)
+      
+      // Convert from degrees to radians
+      const radians = angle * (Math.PI / 180)
+      const newRotation = new THREE.Euler(0, radians, 0)
+      
+      store.updateCarRotation(newRotation)
       return true
     },
 
@@ -149,26 +185,32 @@ class OboCarBridge {
         let value = cmd.value || 1
         let duration = 1000
         
-        // Map command types
-        switch (cmd.type) {
-          case 'forward':
-          case 'backward':
-            duration = value * 1000
-            break
-          case 'turn_left':
-          case 'turn_right':
-            duration = (value / 90) * 1000
-            break
-          case 'stop':
-            duration = 500
-            break
+        // Only process forward and backward commands
+        if (cmd.type === 'forward' || cmd.type === 'backward') {
+          // Calculate a proportional duration for the movement (fixed value)
+          // This ensures that larger distances have enough time to complete
+          duration = Math.max(value * 1000, 500) // Minimum 500ms, scales with distance
+          
+          console.log(`Adding command: ${commandType} with value ${value} and duration ${duration}ms`)
+          store.addCommand({
+            type: commandType,
+            value: value,
+            duration: duration
+          })
+        } else if (cmd.type === 'turn_left' || cmd.type === 'turn_right') {
+          // Calculate a proportional duration for the rotation
+          // This ensures that larger angles have enough time to complete
+          duration = Math.max((value / 90) * 1000, 500) // Minimum 500ms, scales with angle
+          
+          console.log(`Adding rotation command: ${commandType} with value ${value} and duration ${duration}ms`)
+          store.addCommand({
+            type: commandType,
+            value: value,
+            duration: duration
+          })
+        } else {
+          console.log(`⚠️ Command type '${cmd.type}' is not supported`)
         }
-        
-        store.addCommand({
-          type: commandType,
-          value: value,
-          duration: duration
-        })
       })
       
       // Start execution
@@ -191,12 +233,18 @@ class OboCarBridge {
           pos = [position[0] || 0, position[1] || 1, position[2] || 0]
         } else if (position && typeof position === 'object') {
           pos = [position.x || 0, position.y || 1, position.z || 0]
+        } else if (typeof position === 'number' && typeof angle === 'number') {
+          // Handle the case when position is a single number (x coordinate)
+          // This appears to be happening in your error logs
+          pos = [position, 1, 0] // Default y to 1, z to 0
         } else {
           console.warn('Invalid position format:', position)
           return false
         }
         
-        // Update position
+        // Update position - now we support full 3D movement
+        // Use the position from Python, mapping correctly to our coordinate system
+        // Python: [x, y] -> Three.js: [x, y, z] with x=left/right, z=forward/backward
         const newPos = new THREE.Vector3(pos[0], pos[1], pos[2])
         store.updateCarPosition(newPos)
         

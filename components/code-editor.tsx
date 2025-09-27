@@ -13,8 +13,12 @@ car = obocar()
 terminal_print("🚗 Starting Obo Car simulation!")
 
 # Basic movement
-car.forward(5)
-terminal_print(f"Position: {car.get_position()}")
+car.forward(3)
+terminal_print(f"Forward Position: {car.get_position()}")
+
+# Test backward movement
+car.backward(3)
+terminal_print(f"Backward Position: {car.get_position()}")
 
 # Check sensors
 front_distance = car.sensor('front')
@@ -22,7 +26,7 @@ terminal_print(f"Front sensor: {front_distance:.1f}m")
 
 # Turn and move more
 car.right(90)
-car.forward(3)
+car.forward(2)
 terminal_print(f"New position: {car.get_position()}")
 
 # Status check
@@ -49,6 +53,7 @@ interface PyodideInterface {
 interface OboCarAPI {
   log: (message: string) => void
   move: (distance: number, direction?: number, rotation?: number) => void
+  backward: (distance: number) => void // Add dedicated backward method
   rotate: (angle: number) => void
   getSensor?: (direction: "front" | "left" | "right" | "back") => number
   getPosition?: () => [number, number, number]
@@ -443,7 +448,10 @@ print(f"Available files: {os.listdir()}")
 # Import using direct filesystem access
 with open("obocar.py") as f:
     obocar_code = f.read()
-    
+
+# Set a flag to indicate we're running in browser environment 
+# to prevent demo code from automatically running
+__BROWSER__ = True
 exec(obocar_code)
 # Now obocar function is available
 print("✅ obocar module imported successfully")`
@@ -462,7 +470,10 @@ print(f"Available files: {os.listdir()}")
 # Import using direct filesystem access
 with open("obocar.py") as f:
     obocar_code = f.read()
-    
+
+# Set a flag to indicate we're running in browser environment
+# to prevent demo code from automatically running
+__BROWSER__ = True
 exec(obocar_code)
 # Now obocar module is available
 print("✅ obocar module imported successfully")`

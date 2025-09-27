@@ -84,6 +84,20 @@ class OboChar:
         
         return obstacles
         
+    def _get_3d_rotation(self) -> float:
+        """Get the rotation from the 3D scene"""
+        if not IN_BROWSER:
+            return self.angle
+        
+        try:
+            rotation = window.oboCarAPI.getRotation()
+            if rotation is not None:
+                return float(rotation)
+        except Exception as e:
+            print(f"⚠️ Error getting rotation from 3D scene: {e}")
+        
+        return self.angle
+    
     def _sync_with_3d_scene(self):
         """Synchronize internal state with 3D scene when in browser mode"""
         if IN_BROWSER:
@@ -120,14 +134,26 @@ class OboChar:
                 except Exception as e:
                     print(f"⚠️ Error checking state differences: {e}")
                 
-                # Force update 3D scene with our Python state
+                # Force update 3D scene with our Python state - this is critical
+                # This is the most important part to fix position mismatches
                 if hasattr(window.oboCarAPI, "updateState"):
-                    # updateState now handles coordinate system differences
-                    # Pass Python coordinates and angle directly
-                    window.oboCarAPI.updateState(self.position[0], self.position[1], self.angle)
+                    # Map Python 2D coordinates to 3D coordinates:
+                    # Python [x,y] -> 3D [x,1,y]
+                    # Note: y=1 keeps car at constant height above ground
+                    window.oboCarAPI.updateState([self.position[0], 1, self.position[1]], self.angle)
                     print(f"🔄 Synced 3D scene with Python state: pos=[{self.position[0]:.1f}, {self.position[1]:.1f}], angle={self.angle:.1f}°")
                 else:
-                    print("⚠️ updateState method not available for 3D sync")
+                    # Alternative method if updateState isn't available
+                    if hasattr(window.oboCarAPI, "setPosition"):
+                        window.oboCarAPI.setPosition(self.position[0], 1, self.position[1])
+                        print(f"🔄 Synced 3D scene position: [{self.position[0]:.1f}, 1, {self.position[1]:.1f}]")
+                    
+                    if hasattr(window.oboCarAPI, "setRotation"):
+                        window.oboCarAPI.setRotation(self.angle)
+                        print(f"🔄 Synced 3D scene rotation: {self.angle:.1f}°")
+                        
+                    if not (hasattr(window.oboCarAPI, "setPosition") or hasattr(window.oboCarAPI, "setRotation")):
+                        print("⚠️ No sync methods available for 3D sync")
                     
                 # 2. Then get all state from 3D scene to ensure consistency
                 pos = window.oboCarAPI.getPosition()
@@ -232,9 +258,24 @@ class OboChar:
         # Connect to 3D visualization if in browser
         if IN_BROWSER:
             try:
-                window.oboCarAPI.move(-distance)
+                # Make sure distance is positive when sent to the bridge
+                # The bridge will determine the command type based on 'backward' method name
+                if hasattr(window.oboCarAPI, "backward"):
+                    # Use a dedicated backward method if available
+                    window.oboCarAPI.backward(abs(distance))
+                else:
+                    # Fall back to the move method with negative distance
+                    window.oboCarAPI.move(-abs(distance))
+                    
                 # Synchronize with 3D scene after movement
                 self._sync_with_3d_scene()
+                angle_rad = math.radians(self.angle)
+                self.position[0] -= distance * math.sin(angle_rad)
+                self.position[1] -= distance * math.cos(angle_rad)
+                self.total_distance += abs(distance)
+                
+                
+                return self
             except Exception as e:
                 print(f"⚠️ Error connecting to 3D scene: {e}")
                 
@@ -257,7 +298,11 @@ class OboChar:
         # Connect to 3D visualization if in browser
         if IN_BROWSER:
             try:
+                print(f"🔄 Sending rotation command to 3D scene: rotate(-{degrees})")
                 window.oboCarAPI.rotate(-degrees)
+                
+                # Wait briefly to allow animation to start
+                time.sleep(0.1)
             except Exception as e:
                 print(f"⚠️ Error connecting to 3D scene: {e}")
         
@@ -270,7 +315,10 @@ class OboChar:
         
         # Synchronize with 3D scene after rotation
         if IN_BROWSER:
+            # Allow time for the 3D scene to update
+            time.sleep(0.1)
             self._sync_with_3d_scene()
+            print(f"   Synchronized with 3D scene. Current rotation: {self._get_3d_rotation():.1f}°")
         
         return self
     
@@ -290,7 +338,11 @@ class OboChar:
         # Connect to 3D visualization if in browser
         if IN_BROWSER:
             try:
+                print(f"🔄 Sending rotation command to 3D scene: rotate({degrees})")
                 window.oboCarAPI.rotate(degrees)
+                
+                # Wait briefly to allow animation to start
+                time.sleep(0.1)
             except Exception as e:
                 print(f"⚠️ Error connecting to 3D scene: {e}")
         
@@ -303,7 +355,10 @@ class OboChar:
         
         # Synchronize with 3D scene after rotation
         if IN_BROWSER:
+            # Allow time for the 3D scene to update
+            time.sleep(0.1)
             self._sync_with_3d_scene()
+            print(f"   Synchronized with 3D scene. Current rotation: {self._get_3d_rotation():.1f}°")
         
         return self
     
