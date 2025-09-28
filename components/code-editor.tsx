@@ -10,30 +10,8 @@ const defaultCode = `from obocar import obocar
 
 # Create a car instance
 car = obocar()
-terminal_print("🚗 Starting Obo Car simulation!")
-
-# Basic movement
-car.forward(3)
-terminal_print(f"Forward Position: {car.get_position()}")
-
-# Test backward movement
-car.backward(3)
-terminal_print(f"Backward Position: {car.get_position()}")
-
-# Check sensors
-front_distance = car.sensor('front')
-terminal_print(f"Front sensor: {front_distance:.1f}m")
-
-# Turn and move more
-car.right(90)
-car.forward(2)
-terminal_print(f"New position: {car.get_position()}")
-
-# Status check
-status = car.status()
-terminal_print(f"Status: {status}")
-
-terminal_print("✅ Simulation complete!")`
+car.wait(0.5)
+`
 
 interface PyodideInterface {
   runPython: (code: string) => any
@@ -110,7 +88,7 @@ export function CodeEditor() {
 
               setLoadingProgress("Loading obocar module...")
               try {
-                const response = await fetch('/python/obocar.py')
+                const response = await fetch('/obocar.py')
                 if (!response.ok) {
                   throw new Error(`Failed to fetch obocar.py: ${response.status} ${response.statusText}`)
                 }
@@ -339,11 +317,6 @@ sys.stdout = output_capture
           console.log(`[v0] Reporting car position: [${car.position[0]}, ${car.position[1]}, ${car.position[2]}]`)
           return car.position
         },
-        getBattery: () => {
-          const { car } = useSimulationStore.getState()
-          console.log(`[v0] Reporting car battery level: ${car.battery}%`)
-          return car.battery
-        },
         getDistanceTraveled: () => {
           const { car } = useSimulationStore.getState()
           console.log(`[v0] Reporting distance traveled: ${car.distanceTraveled} units`)
@@ -367,11 +340,9 @@ sys.stdout = output_capture
           console.log(`[v0] Reporting car status: 
           Position: [${car.position[0]}, ${car.position[1]}, ${car.position[2]}]
           Rotation: ${car.rotation}°
-          Battery: ${car.battery}%
           Distance: ${car.distanceTraveled} units
         `)
           return {
-            battery: car.battery,
             position: car.position,
             rotation: car.rotation,
             distanceTraveled: car.distanceTraveled

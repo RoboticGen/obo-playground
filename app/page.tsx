@@ -119,7 +119,7 @@ export default function OboPlayground() {
                     <directionalLight position={[10, 20, 10]} intensity={1} castShadow />
                     
                     <Physics gravity={[0, -9.81, 0]}>
-                      <OboCarScene />
+                      <OboCarScene key="obo-car-scene-stable" />
                     </Physics>
                     
                     <OrbitControls
@@ -140,9 +140,7 @@ export default function OboPlayground() {
           </div>
         </div>
       </div>
-      
-      {/* Terminal Panel */}
-      <TerminalPanel />
+     
     </div>
   )
 }

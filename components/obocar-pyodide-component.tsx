@@ -28,26 +28,7 @@ const OboCarPyodideComponent: React.FC = () => {
 
 # Create a car instance
 car = obocar()
-print("🚗 Starting Obo Car simulation!")
-
-# Basic movement
-car.forward(5)
-print(f"Position: {car.get_position()}")
-
-# Check sensors
-front_distance = car.sensor('front')
-print(f"Front sensor: {front_distance:.1f}m")
-
-# Turn and move more
-car.right(90)
-car.forward(3)
-print(f"New position: {car.get_position()}")
-
-# Status check
-status = car.status()
-print(f"Status: {status}")
-
-print("✅ Simulation complete!")`);
+`);
 
   const outputRef = useRef<HTMLPreElement>(null);
 
@@ -77,7 +58,7 @@ print("✅ Simulation complete!")`);
         // Load obocar.py
         appendOutput('Loading obocar module...');
         try {
-          const response = await fetch('/python/obocar.py');
+          const response = await fetch('obocar.py');
           if (!response.ok) {
             throw new Error(`Failed to fetch obocar.py: ${response.status} ${response.statusText}`);
           }

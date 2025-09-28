@@ -57,13 +57,17 @@ class OboCarBridge {
 
       // Rotation methods to control car orientation
       rotate: (angle: number) => {
-        console.log(`🔄 Bridge: Rotating car ${angle} degrees`)
+        console.log(`🔄 Bridge: Queuing rotation command ${angle} degrees`)
         const store = this.getStore()
         
         // Determine the rotation type based on the angle
+        // Python sends: left() → rotate(-degrees), right() → rotate(+degrees)
+        // So: positive angle should trigger right turn, negative angle should trigger left turn
         const rotationType = angle > 0 ? 'turn_right' : 'turn_left'
         const rotationValue = Math.abs(angle)
         const rotationDuration = (rotationValue / 90) * 1000
+        
+        console.log(`📋 Adding ${rotationType} command: ${rotationValue}° for ${rotationDuration}ms`)
         
         store.addCommand({
           type: rotationType,
@@ -71,8 +75,11 @@ class OboCarBridge {
           duration: rotationDuration
         })
         
+        console.log(`📋 Command queue now has ${store.commandQueue.length} commands`)
+        
         // Start execution if not already running
         if (!store.isRunning) {
+          console.log(`🚀 Starting command execution`)
           store.setRunning(true)
         }
         
@@ -83,6 +90,47 @@ class OboCarBridge {
       turn: (angle: number) => {
         // Use the rotate method directly since we're in the same object
         return (window as any).oboCarAPI.rotate(angle)
+      },
+
+      // Callback that Python can use to update its internal state
+      syncAngleWithPython: (angleInDegrees: number) => {
+        try {
+          // Normalize angle to 0-360 range
+          const normalizedAngle = ((angleInDegrees % 360) + 360) % 360
+          
+          // Check multiple possible pyodide locations and only log if we find one
+          const pyodideInstance = (window as any).pyodide || (window as any).pyodideInstance
+          
+          if (pyodideInstance && pyodideInstance.globals) {
+            console.log(`🔄 Attempting to sync Python angle to ${normalizedAngle}° (from ${angleInDegrees}°)`)
+            const python = pyodideInstance.globals
+            
+            // Try different ways to access the obocar instance
+            if (python.get('_obocar_instance')) {
+              python.get('_obocar_instance').angle = normalizedAngle
+              console.log(`✅ Synced Python angle to ${normalizedAngle}°`)
+            } else {
+              // Try alternative global access
+              const builtins = python.get('__builtins__')
+              if (builtins && builtins._obocar_instance) {
+                builtins._obocar_instance.angle = normalizedAngle
+                console.log(`✅ Synced Python angle via builtins to ${normalizedAngle}°`)
+              } else {
+                // Only warn in debug mode or if explicitly requested
+                if (process.env.NODE_ENV === 'development') {
+                  console.debug('⚠️ Could not find Python obocar instance to sync angle')
+                }
+              }
+            }
+          } else {
+            // Only show this error occasionally to avoid spam
+            if (Math.random() < 0.1) { // Show 10% of the time
+              console.debug('⚠️ Pyodide not ready for angle sync (this is normal during startup)')
+            }
+          }
+        } catch (error) {
+          console.warn('❌ Failed to sync angle with Python:', error)
+        }
       },
 
     // Get current car position

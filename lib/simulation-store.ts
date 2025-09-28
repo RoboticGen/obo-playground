@@ -88,6 +88,9 @@ export interface SimulationStore {
   carAnimation: CarAnimationState
   sensorData: SensorData
   metrics: SimulationMetrics
+  
+  // Python Synchronization
+  cumulativeAngle: number // Track total rotation for Python sync
 
   // Command System
   commandQueue: MovementCommand[]
@@ -121,6 +124,7 @@ export interface SimulationStore {
   updateCarPosition: (position: THREE.Vector3) => void
   updateCarRotation: (rotation: THREE.Euler) => void
   updateSensorData: (sensors: Partial<SensorData>) => void
+  updateCumulativeAngle: (angle: number) => void
 
   // Command Actions
   addCommand: (command: Omit<MovementCommand, 'id' | 'timestamp' | 'executed'>) => void
@@ -256,6 +260,8 @@ export const useSimulationStore = create<SimulationStore>()(
     carAnimation: { ...defaultCarAnimation },
     sensorData: { ...defaultSensorData },
     metrics: { ...defaultMetrics },
+    
+    cumulativeAngle: 0, // Initialize Python cumulative angle
 
     commandQueue: [],
     currentCommand: null,
@@ -298,6 +304,8 @@ export const useSimulationStore = create<SimulationStore>()(
     updateSensorData: (sensors) => set((state) => ({
       sensorData: { ...state.sensorData, ...sensors }
     })),
+
+    updateCumulativeAngle: (angle) => set({ cumulativeAngle: angle }),
 
     // Command Actions
     addCommand: (commandData) => {
@@ -408,6 +416,7 @@ export const useSimulationStore = create<SimulationStore>()(
       carAnimation: { ...defaultCarAnimation },
       sensorData: { ...defaultSensorData },
       metrics: { ...defaultMetrics },
+      cumulativeAngle: 0, // Reset cumulative angle
       commandQueue: [],
       currentCommand: null,
       executionError: null
@@ -562,6 +571,15 @@ async function executeCommand(
   })
 }
 
+// Helper function to process cumulative angles for 3D rotation
+function processAngleForRotation(cumulativeAngle: number): number {
+  // Simply normalize angle to 0-360 range and return it directly
+  // The 3D scene should rotate to the exact cumulative angle position
+  const normalizedAngle = ((cumulativeAngle % 360) + 360) % 360
+  console.log(`🔄 3D Rotation: ${cumulativeAngle}° → normalized: ${normalizedAngle}°`)
+  return normalizedAngle
+}
+
 function executeForwardCommand(
   command: MovementCommand,
   get: () => SimulationStore,
@@ -576,8 +594,8 @@ function executeForwardCommand(
 
   const startPos = get().carPhysics.position.clone()
   // Calculate direction based on current rotation
-  // In 3D forward is negative Z, so we use (0, 0, -1) as base direction
-  const direction = new THREE.Vector3(0, 0, -1)
+  // In 3D forward is positive Z direction (toward camera)
+  const direction = new THREE.Vector3(0, 0, 1)
   direction.applyEuler(get().carPhysics.rotation)
 
   // Calculate target position by moving along the direction vector
@@ -624,8 +642,8 @@ function executeBackwardCommand(
   const duration = Math.abs(command.duration || 1000)
 
   const startPos = get().carPhysics.position.clone()
-  // Direction for backward is positive Z (opposite of forward)
-  const direction = new THREE.Vector3(0, 0, 1)
+  // Direction for backward is negative Z (opposite of forward)
+  const direction = new THREE.Vector3(0, 0, -1)
   direction.applyEuler(get().carPhysics.rotation)
 
   // Calculate target position by moving along the direction vector
@@ -667,11 +685,26 @@ function executeTurnLeftCommand(
   const angle = command.value || 90
   const duration = command.duration || 1000
 
-  const startRot = get().carPhysics.rotation.clone()
-  const targetRot = startRot.clone()
-  targetRot.y += THREE.MathUtils.degToRad(angle)
+  // Calculate new cumulative angle first
+  const { cumulativeAngle, updateCumulativeAngle } = get()
+  const newCumulativeAngle = cumulativeAngle + angle // Left turn increases angle (counter-clockwise)
+  
+  // Process the cumulative angle for 3D rotation
+  const processedAngle = processAngleForRotation(newCumulativeAngle)
+  
+  // Set target rotation based on processed cumulative angle
+  const targetRot = new THREE.Euler(0, THREE.MathUtils.degToRad(processedAngle), 0)
 
   animateToRotation(targetRot, duration, get, set, () => {
+    // Update the cumulative angle in store
+    updateCumulativeAngle(newCumulativeAngle)
+    
+    // Sync with Python using cumulative angle
+    if (typeof window !== 'undefined' && (window as any).oboCarAPI) {
+      console.log(`🔄 Left turn: updating cumulative angle ${cumulativeAngle}° → ${newCumulativeAngle}°`)
+      ;(window as any).oboCarAPI.syncAngleWithPython(newCumulativeAngle)
+    }
+    
     get().setAnimationState(AnimationState.IDLE)
     resolve()
   })
@@ -689,11 +722,26 @@ function executeTurnRightCommand(
   const angle = command.value || 90
   const duration = command.duration || 1000
 
-  const startRot = get().carPhysics.rotation.clone()
-  const targetRot = startRot.clone()
-  targetRot.y -= THREE.MathUtils.degToRad(angle)
+  // Calculate new cumulative angle first
+  const { cumulativeAngle, updateCumulativeAngle } = get()
+  const newCumulativeAngle = cumulativeAngle - angle // Right turn decreases angle (clockwise)
+  
+  // Process the cumulative angle for 3D rotation
+  const processedAngle = processAngleForRotation(newCumulativeAngle)
+  
+  // Set target rotation based on processed cumulative angle
+  const targetRot = new THREE.Euler(0, THREE.MathUtils.degToRad(processedAngle), 0)
 
   animateToRotation(targetRot, duration, get, set, () => {
+    // Update the cumulative angle in store
+    updateCumulativeAngle(newCumulativeAngle)
+    
+    // Sync with Python using cumulative angle
+    if (typeof window !== 'undefined' && (window as any).oboCarAPI) {
+      console.log(`🔄 Right turn: updating cumulative angle ${cumulativeAngle}° → ${newCumulativeAngle}°`)
+      ;(window as any).oboCarAPI.syncAngleWithPython(newCumulativeAngle)
+    }
+    
     get().setAnimationState(AnimationState.IDLE)
     resolve()
   })
@@ -731,6 +779,9 @@ function executeWaitCommand(
   setTimeout(resolve, command.duration || 1000)
 }
 
+// Global flag to prevent multiple position animation loops
+let positionAnimationId: number | null = null;
+
 function animateToPosition(
   targetPos: THREE.Vector3,
   duration: number,
@@ -738,6 +789,12 @@ function animateToPosition(
   set: (fn: (state: SimulationStore) => Partial<SimulationStore>) => void,        
   onComplete: () => void
 ) {
+  // Cancel any existing position animation
+  if (positionAnimationId) {
+    cancelAnimationFrame(positionAnimationId);
+    positionAnimationId = null;
+  }
+
   const startTime = Date.now()
   const startPos = get().carPhysics.position.clone()
 
@@ -815,10 +872,11 @@ function animateToPosition(
     });
 
     if (progress < 1) {
-      requestAnimationFrame(animate);
+      positionAnimationId = requestAnimationFrame(animate);
     } else {
       // Mark as completed to prevent multiple calls
       isCompleted = true;
+      positionAnimationId = null;
 
       // Apply the final cleanup to ensure complete stop
       finalCleanup();
@@ -829,6 +887,9 @@ function animateToPosition(
   animate();
 }
 
+// Global flag to prevent multiple animation loops
+let rotationAnimationId: number | null = null;
+
 function animateToRotation(
   targetRot: THREE.Euler,
   duration: number,
@@ -836,6 +897,12 @@ function animateToRotation(
   set: (fn: (state: SimulationStore) => Partial<SimulationStore>) => void,        
   onComplete: () => void
 ) {
+  // Cancel any existing rotation animation
+  if (rotationAnimationId) {
+    cancelAnimationFrame(rotationAnimationId);
+    rotationAnimationId = null;
+  }
+
   const startTime = Date.now()
   const startRot = get().carPhysics.rotation.clone()
 
@@ -873,16 +940,30 @@ function animateToRotation(
     const elapsed = Date.now() - startTime
     const progress = Math.min(elapsed / duration, 1)
 
+    // Use proper angle interpolation to avoid the long way around
+    const startY = startRot.y
+    const targetY = targetRot.y
+    
+    // Calculate the shortest angle difference
+    let angleDiff = targetY - startY
+    if (angleDiff > Math.PI) {
+      angleDiff -= 2 * Math.PI
+    } else if (angleDiff < -Math.PI) {
+      angleDiff += 2 * Math.PI
+    }
+    
+    const currentY = startY + angleDiff * progress
+
     const currentRot = new THREE.Euler(
       THREE.MathUtils.lerp(startRot.x, targetRot.x, progress),
-      THREE.MathUtils.lerp(startRot.y, targetRot.y, progress),
+      currentY,
       THREE.MathUtils.lerp(startRot.z, targetRot.z, progress)
     )
 
     // Log every 25% progress
     const currentDegrees = currentRot.y * (180 / Math.PI)
     if (progress % 0.25 < 0.01) {
-      console.log(`Rotation progress: ${(progress * 100).toFixed(0)}%, current: ${currentDegrees.toFixed(2)}°`)
+      //console.log(`Rotation progress: ${(progress * 100).toFixed(0)}%, current: ${currentDegrees.toFixed(2)}°`)
     }
 
     set((state) => ({
@@ -896,10 +977,11 @@ function animateToRotation(
     }))
 
     if (progress < 1) {
-      requestAnimationFrame(animate)
+      rotationAnimationId = requestAnimationFrame(animate)
     } else {
       // Mark as completed to prevent multiple completions
       isCompleted = true
+      rotationAnimationId = null
 
       // Apply final cleanup
       finalCleanup()
