@@ -22,6 +22,7 @@ interface CarAnimationHookProps {
 }
 
 export function useCarAnimation({ carRef }: CarAnimationHookProps) {
+  // Refs must be declared first and consistently
   const animationStartTime = useRef<number>(0)
   const lastPosition = useRef(new THREE.Vector3())
   const lastRotation = useRef(new THREE.Euler())
@@ -30,11 +31,10 @@ export function useCarAnimation({ carRef }: CarAnimationHookProps) {
   const pendingStateChange = useRef<{state: AnimationState, time: number} | null>(null)
   const pendingCommand = useRef<string | null>(null);
   const lastDriftCorrectionTime = useRef<number>(0); // Track when we last corrected drift
+  const lastInitialization = useRef<string>('');
+  const isInitialized = useRef<boolean>(false)
   
-  // Define safeSetAnimationState after we get the store values below
-  
-  // We'll move this effect after defining safeSetAnimationState
-  
+  // Store hooks must be called consistently
   const {
     carPhysics,
     carAnimation,
@@ -52,7 +52,7 @@ export function useCarAnimation({ carRef }: CarAnimationHookProps) {
     
     // If trying to change state too quickly, queue it instead
     if (timeSinceLastChange < 400) {
-      console.log(`State change to ${newState} too soon (${timeSinceLastChange}ms), queueing instead`);
+      //console.log(`State change to ${newState} too soon (${timeSinceLastChange}ms), queueing instead`);
       pendingStateChange.current = { state: newState, time: now };
       return;
     }
@@ -103,7 +103,15 @@ export function useCarAnimation({ carRef }: CarAnimationHookProps) {
       carRef.current.setLinvel({ x: 0, y: 0, z: 0 }, true)
       carRef.current.setAngvel({ x: 0, y: 0, z: 0 }, true)
       
-      console.log(`Initialized car with rotation: ${carPhysics.rotation.y * (180 / Math.PI)}° (${carPhysics.rotation.y.toFixed(4)} rad)`)
+      // Only log if rotation has changed significantly
+      const currentRotationKey = `${carPhysics.rotation.y.toFixed(3)}-${carPhysics.position.x.toFixed(2)}-${carPhysics.position.y.toFixed(2)}-${carPhysics.position.z.toFixed(2)}`;
+      if (lastInitialization.current !== currentRotationKey) {
+        //console.log(`Initialized car with rotation: ${carPhysics.rotation.y * (180 / Math.PI)}° (${carPhysics.rotation.y.toFixed(4)} rad)`)
+        lastInitialization.current = currentRotationKey;
+      }
+      
+      // Mark as initialized
+      isInitialized.current = true;
     }
   }, [isRunning, carRef, carPhysics.position, carPhysics.rotation])
 
@@ -559,6 +567,11 @@ export function useCarAnimation({ carRef }: CarAnimationHookProps) {
 
   // Use frame to update animation and enforce straight-line movement
   useFrame((state, delta) => {
+    // Early return if carRef is not available or not initialized
+    if (!carRef.current || !isInitialized.current) {
+      return
+    }
+    
     // Process the current animation state
     processAnimationState()
     
@@ -575,9 +588,15 @@ export function useCarAnimation({ carRef }: CarAnimationHookProps) {
         carRef.current.setLinvel({ x: 0, y: vel.y, z: vel.z }, true)
       }
       
-      // Keep rotation fixed
-      const fixedRotation = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, 0, 0))
-      carRef.current.setRotation(fixedRotation, true)
+      // Use rotation from physics store instead of forcing to zero
+      // Only apply rotation when not actively rotating to avoid conflicts
+      const isActivelyRotating = carAnimation.currentState === AnimationState.TURNING_LEFT || 
+                                carAnimation.currentState === AnimationState.TURNING_RIGHT
+      
+      if (!isActivelyRotating) {
+        const storeRotation = new THREE.Quaternion().setFromEuler(carPhysics.rotation)
+        carRef.current.setRotation(storeRotation, true)
+      }
       
       // Check if we should force stop the car
       // This ensures the car stops completely between commands
@@ -664,9 +683,9 @@ export function useCarAnimation({ carRef }: CarAnimationHookProps) {
         
         // Check for unexpected velocity (use a higher threshold to avoid false positives)
         // Use a higher threshold for Z velocity since that's where we're experiencing issues
-        const hasUnexpectedVelocity = Math.abs(velocity.x) > 0.05 || 
-                                     Math.abs(velocity.y) > 0.05 || 
-                                     Math.abs(velocity.z) > 1.0; // Increased Z threshold from 0.05 to 1.0
+        const hasUnexpectedVelocity = Math.abs(velocity.x) > 0.1 || 
+                                     Math.abs(velocity.y) > 0.1 || 
+                                     Math.abs(velocity.z) > 2.0; // Further increased Z threshold to reduce false positives
         
         // Check if the car has drifted from its idle position
         let hasDrifted = false;
@@ -675,23 +694,26 @@ export function useCarAnimation({ carRef }: CarAnimationHookProps) {
           const driftY = Math.abs(currPos.y - idlePositionRef.current.y);
           const driftZ = Math.abs(currPos.z - idlePositionRef.current.z);
           
-          // Use a higher threshold for Z-axis drift since that's where we're seeing constant small movements
-          hasDrifted = driftX > 0.05 || driftY > 0.05 || driftZ > 1.0; // Increased Z threshold from 0.05 to 1.0
+          // Use higher thresholds to reduce false positives
+          hasDrifted = driftX > 0.1 || driftY > 0.1 || driftZ > 2.0; // Further increased thresholds
           
-          // Only log significant drifts to reduce console spam
-          if (hasDrifted) {
-            //console.log(`Car has drifted in IDLE state. Drift: x=${driftX.toFixed(3)}, y=${driftY.toFixed(3)}, z=${driftZ.toFixed(3)}`);
+          // Only log significant drifts in development mode
+          if (hasDrifted && process.env.NODE_ENV === 'development') {
+            console.debug(`Car has drifted in IDLE state. Drift: x=${driftX.toFixed(3)}, y=${driftY.toFixed(3)}, z=${driftZ.toFixed(3)}`);
           }
         }
         
         // Throttle corrections to avoid constant resetting
         const now = Date.now();
         const timeSinceLastCorrection = now - lastDriftCorrectionTime.current;
-        const shouldApplyCorrection = timeSinceLastCorrection > 500; // Only correct every 500ms
+        const shouldApplyCorrection = timeSinceLastCorrection > 1000; // Increased from 500ms to 1000ms
         
         if ((hasUnexpectedVelocity || hasDrifted) && shouldApplyCorrection) {
-          console.log('Stopping unexpected movement in IDLE state: ', 
-            `x: ${velocity.x.toFixed(3)}, y: ${velocity.y.toFixed(3)}, z: ${velocity.z.toFixed(3)}`);
+          // Only log significant movement issues
+          if (Math.abs(velocity.x) > 0.2 || Math.abs(velocity.y) > 0.2 || Math.abs(velocity.z) > 3.0) {
+            console.log('Stopping unexpected movement in IDLE state: ', 
+              `x: ${velocity.x.toFixed(3)}, y: ${velocity.y.toFixed(3)}, z: ${velocity.z.toFixed(3)}`);
+          }
           
           lastDriftCorrectionTime.current = now;
           

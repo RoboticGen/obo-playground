@@ -146,8 +146,10 @@ function AnimationStateDisplay() {
   )
 }
 
-export function OboCarScene() {
+function OboCarScene() {
   const carRef = useRef<any>(null)
+  const isMounted = useRef(false)
+  
   const {
     carPhysics,
     obstacles,
@@ -156,12 +158,20 @@ export function OboCarScene() {
     debugMode
   } = useSimulationStore()
 
-  // Use the car animation hook
+  // Always call the car animation hook in the same order
   const { animationState } = useCarAnimation({ carRef })
+  
+  // Set mounted flag on first render
+  useEffect(() => {
+    isMounted.current = true
+    return () => {
+      isMounted.current = false
+    }
+  }, [])
 
   // Update sensor readings based on obstacles and environment
   useFrame(() => {
-    if (carRef.current && isRunning) {
+    if (carRef.current && isRunning && isMounted.current) {
       const position = carRef.current.translation()
       
       // Calculate sensor readings for all directions
@@ -170,10 +180,7 @@ export function OboCarScene() {
         left: calculateSensorDistance(position, 'left', obstacles),
         right: calculateSensorDistance(position, 'right', obstacles),
         back: calculateSensorDistance(position, 'back', obstacles),
-        frontLeft: calculateSensorDistance(position, 'frontLeft', obstacles),
-        frontRight: calculateSensorDistance(position, 'frontRight', obstacles),
-        backLeft: calculateSensorDistance(position, 'backLeft', obstacles),
-        backRight: calculateSensorDistance(position, 'backRight', obstacles),
+       
       }
 
       updateSensorData(sensorReadings)
@@ -268,18 +275,7 @@ function calculateSensorDistance(
     case 'right':
       directionVector = { x: 1, z: 0 }
       break
-    case 'frontLeft':
-      directionVector = { x: -0.707, z: 0.707 }
-      break
-    case 'frontRight':
-      directionVector = { x: 0.707, z: 0.707 }
-      break
-    case 'backLeft':
-      directionVector = { x: -0.707, z: -0.707 }
-      break
-    case 'backRight':
-      directionVector = { x: 0.707, z: -0.707 }
-      break
+   
   }
 
   // Check distance to obstacles
@@ -313,3 +309,6 @@ function calculateSensorDistance(
 
   return Math.max(0, minDistance)
 }
+
+// Export the component
+export { OboCarScene }

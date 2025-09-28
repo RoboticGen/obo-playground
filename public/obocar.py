@@ -31,6 +31,13 @@ class OboChar:
         self.obstacles = []  # No obstacles by default
         self._event_log = []  # Track events for debugging
         
+        # Register this instance globally for synchronization
+        try:
+            import builtins
+            builtins._obocar_instance = self
+        except:
+            pass
+        
     def _is_browser_env(self):
         """Check if running in browser environment with JS bridge."""
         try:
@@ -154,22 +161,28 @@ class OboChar:
         Args:
             degrees: Degrees to turn left
         """
-        print(f"⬅️ Turning left {degrees} degrees...")
+        print(f"⬅️ Queuing left turn {degrees} degrees...")
         self._log_event(f"left({degrees})")
         
-        # Update the Python model
-        self.angle = (self.angle - degrees) % 360
-        
-        # Update the 3D scene through the bridge if available
+        # Queue the rotation command instead of applying immediately
         if self._is_browser_env():
             try:
                 from js import window
+                # For left turn: send negative angle to trigger turn_left command
                 print(f"🔄 Sending rotation command to 3D scene: rotate({-degrees})")
-                window.oboCarAPI.rotate(-degrees)  # Negative angle for left turns
+                window.oboCarAPI.rotate(-degrees)
+                
+                # Update Python model only after the command is queued
+                # Don't update immediately - let the animation system handle it
+                print(f"   Left turn command queued")
             except Exception as e:
                 print(f"⚠️ Error syncing rotation with 3D scene: {e}")
-            
-        print(f"   New heading: {self.angle:.1f}°")
+                # Don't update Python angle - let the 3D scene handle rotation
+                print(f"   Rotation command failed, relying on 3D scene synchronization")
+        else:
+            # No browser environment, use Python calculation
+            self.angle = (self.angle - degrees) % 360
+            print(f"   New heading: {self.angle:.1f}°")
     
     def right(self, degrees: float) -> None:
         """
@@ -178,22 +191,28 @@ class OboChar:
         Args:
             degrees: Degrees to turn right
         """
-        print(f"➡️ Turning right {degrees} degrees...")
+        print(f"➡️ Queuing right turn {degrees} degrees...")
         self._log_event(f"right({degrees})")
         
-        # Update the Python model
-        self.angle = (self.angle + degrees) % 360
-        
-        # Update the 3D scene through the bridge if available
+        # Queue the rotation command instead of applying immediately
         if self._is_browser_env():
             try:
                 from js import window
+                # For right turn: send positive angle to trigger turn_right command
                 print(f"🔄 Sending rotation command to 3D scene: rotate({degrees})")
                 window.oboCarAPI.rotate(degrees)
+                
+                # Update Python model only after the command is queued
+                # Don't update immediately - let the animation system handle it
+                print(f"   Right turn command queued")
             except Exception as e:
                 print(f"⚠️ Error syncing rotation with 3D scene: {e}")
-        
-        print(f"   New heading: {self.angle:.1f}°")
+                # Don't update Python angle - let the 3D scene handle rotation
+                print(f"   Rotation command failed, relying on 3D scene synchronization")
+        else:
+            # No browser environment, use Python calculation
+            self.angle = (self.angle + degrees) % 360
+            print(f"   New heading: {self.angle:.1f}°")
     
     def sensor(self, direction: str = 'front') -> float:
         """
@@ -356,22 +375,14 @@ if __name__ == "__main__" and not "__BROWSER__" in globals():
     print("🚗 Starting Obo Car simulation!")
     
     # Move forward 3 units
-    car.forward(3)
+    car.forward(5)
     car.wait(0.5)
-    car.backward(3)
-    # Check front sensor
-    front_distance = car.sensor('front')
-    print(f"Front sensor: {front_distance:.1f}m")
-    
-    # Make decisions based on sensor data
-    if front_distance > 5:
-        print("Path clear, moving forward")
-        car.forward(2)
-    else:
-        print("Obstacle detected, turning right")
-        car.right(90)
-        car.forward(2)
-    
+    car.right(90)
+    car.right(90)
+    car.forward(5)
+    car.right(90)
+    car.forward(5)
+    print(car.angle)
     # Check status
     distance = car.distance()
     print(f"Mission complete! Distance: {distance:.1f}m")
