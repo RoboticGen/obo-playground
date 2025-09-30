@@ -50,14 +50,21 @@ export default function OboPlayground() {
       <header className="border-b bg-card/50 backdrop-blur-sm">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
-              <Zap className="w-5 h-5 text-primary-foreground" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-bold">Obo Playground</h1>
-              <p className="text-sm text-muted-foreground">
-                Learn programming through car simulation
-              </p>
+          
+            <div className="flex items-center gap-3">
+              {/* Logo image - place logo.png in your public/ folder */}
+              <img
+                src="/logo.png"
+                alt="Obo Logo"
+                className="w-10 h-10 rounded shadow"
+                style={{ objectFit: "contain", background: "#fff" }}
+              />
+              <div>
+                <h1 className="text-2xl font-bold">Obo Playground</h1>
+                <p className="text-sm text-muted-foreground">
+                  Learn programming through car simulation
+                </p>
+              </div>
             </div>
           </div>
 
@@ -132,7 +139,7 @@ export default function OboPlayground() {
                     />
                     
                     <Grid args={[20, 20]} cellSize={1} sectionSize={5} />
-                    <Environment preset="sunset" />
+                    <Environment preset="night" />
                   </Canvas>
                 </Suspense>
               </CardContent>

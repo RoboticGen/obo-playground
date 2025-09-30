@@ -225,37 +225,16 @@ export class CarControlAPI {
   }
 
   /**
-   * Get sensor reading for a specific direction
-   * @param direction Direction to check (front, back, left, right)
-   * @returns Distance to nearest obstacle
-   */
-  getSensor(direction: "front" | "back" | "left" | "right"): number {
-    const { car } = useSimulationStore.getState()
-    return car.sensorReadings[direction]
-  }
-
-
-
-  /**
-   * Get total distance traveled
-   * @returns Distance in units
-   */
-  getDistanceTraveled(): number {
-    const { car } = useSimulationStore.getState()
-    return car.distanceTraveled
-  }
-
-  /**
    * Execute a command that affects the physics simulation
    */
   executePhysicsCommand(command: string, value: number): void {
-    console.log(`[v0] Executing physics command: ${command}(${value})`)
+    console.log(`Executing physics command: ${command}(${value})`)
 
     const { car, speed, isRunning } = useSimulationStore.getState()
 
     // Only execute if simulation is running
     if (!isRunning) {
-      console.log("[v0] Simulation not running, ignoring command")
+      console.log("Simulation not running, ignoring command")
       return
     }
 

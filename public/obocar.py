@@ -1,19 +1,11 @@
-"""
-Obo Car Simulation Library - Single File Version
-A lightweight Python library for simulating car dynamics and physics.
-Designed specifically for Pyodide in browser environments.
-
-This file contains the complete obocar library in a single module
-that can be easily loaded into Pyodide.
-"""
 
 import random
 import math
 import time
 from typing import Dict, Tuple, List, Optional
+from js import window
 
-
-class OboChar:
+class OboCar:
     """
     Main vehicle class for Obo Car simulation.
     Provides methods for movement, sensors, and status monitoring.
@@ -25,10 +17,7 @@ class OboChar:
         self.position = [0.0, 0.0]  # x, y coordinates
         self.angle = 0.0  # heading in degrees (0 = north)
         self.speed = 0.0  # current speed
-        self.max_speed = 10.0  # maximum speed units per second
         self.total_distance = 0.0  # total distance traveled
-        self.sensor_range = 20.0  # sensor detection range
-        self.obstacles = []  # No obstacles by default
         self._event_log = []  # Track events for debugging
         
         # Register this instance globally for synchronization
@@ -81,10 +70,7 @@ class OboChar:
         # Check if we're running in browser with JavaScript bridge
         if self._is_browser_env():
             try:
-                # Import js module for Pyodide
-                from js import window
-                
-                # Store current position before moving
+
                 prev_position = self.position.copy()
                 
                 print(f"🔗 Connecting to 3D scene: calling window.oboCarAPI.move({distance})")
@@ -124,10 +110,7 @@ class OboChar:
         
         # Check if we're running in browser with JavaScript bridge
         if self._is_browser_env():
-            try:
-                # Import js module for Pyodide
-                from js import window
-                
+            try:                
                 # Store current position before moving
                 prev_position = self.position.copy()
                 
@@ -214,34 +197,6 @@ class OboChar:
             self.angle = (self.angle + degrees) % 360
             print(f"   New heading: {self.angle:.1f}°")
     
-    def sensor(self, direction: str = 'front') -> float:
-        """
-        Get distance reading from the specified sensor.
-        
-        Args:
-            direction: Sensor direction ('front', 'back', 'left', 'right')
-            
-        Returns:
-            Distance to nearest obstacle in meters, or maximum sensor range if no obstacles
-        """
-        sensor_angles = {
-            'front': 0,
-            'right': 90,
-            'back': 180,
-            'left': 270
-        }
-        
-        if direction not in sensor_angles:
-            raise ValueError(f"Invalid sensor direction: {direction}. Use: {list(sensor_angles.keys())}")
-        
-        # Since we removed obstacles, always return max range with small noise
-        noise = random.uniform(-0.2, 0.2)
-        result = max(0.1, self.sensor_range + noise)
-        
-        self._log_event(f"sensor({direction}) = {result:.1f}")
-        return result
-    
-
     
     def distance(self) -> float:
         """
@@ -264,78 +219,11 @@ class OboChar:
         self._log_event(f"wait({seconds})")
         # In browser environment, we simulate the wait without actually blocking
     
-    def get_position(self) -> Tuple[float, float]:
-        """
-        Get current position.
-        
-        Returns:
-            Current (x, y) position
-        """
-        return (round(self.position[0], 1), round(self.position[1], 1))
+    def get_position(self):
+        return self.position
     
-    def get_heading(self) -> float:
-        """
-        Get current heading.
-        
-        Returns:
-            Current heading in degrees
-        """
-        return round(self.angle, 1)
-    
-    def status(self) -> Dict:
-        """
-        Get comprehensive status information.
-        
-        Returns:
-            Dictionary containing all status information
-        """
-        return {
-            'position': self.get_position(),
-            'heading': self.get_heading(),
-            'distance': self.distance(),
-            'speed': round(self.speed, 1),
-            'obstacles_nearby': self._count_nearby_obstacles()
-        }
-    
-    def _check_collisions(self) -> bool:
-        """Check if the car has collided with any obstacles."""
-        # Since we removed obstacles, always return False
-        return False
-    
-    def _count_nearby_obstacles(self, radius: float = 10.0) -> int:
-        """Count obstacles within specified radius."""
-        # Since we removed obstacles, always return 0
-        return 0
-    
-    def get_obstacles(self) -> List[Tuple[float, float]]:
-        """
-        Get list of all obstacles in the environment.
-        
-        Returns:
-            List of (x, y) obstacle positions
-        """
-        return self.obstacles.copy()
-    
-    def add_obstacle(self, x: float, y: float) -> None:
-        """
-        Add a new obstacle to the environment.
-        
-        Args:
-            x: X coordinate of obstacle
-            y: Y coordinate of obstacle
-        """
-        self.obstacles.append((x, y))
-        print(f"🚧 Added obstacle at ({x:.1f}, {y:.1f})")
-    
-    def get_event_log(self) -> List[Dict]:
-        """
-        Get the event log for debugging.
-        
-        Returns:
-            List of logged events
-        """
-        return self._event_log.copy()
-    
+
+
     def reset(self) -> None:
         """Reset the car to initial state."""
         self.position = [0.0, 0.0]
@@ -347,44 +235,15 @@ class OboChar:
         print("🔄 Car reset to initial state")
         self._log_event("reset()")
 
+    def _check_collisions(self) ->bool:
+        return False
 
-# Factory function to create obocar instances
 def obocar():
     """Create and return a new OboChar instance."""
-    return OboChar()
-
+    return OboCar()
 
 # Make the main classes and functions available at module level
 __version__ = "0.1.0"
 __author__ = "Obo Car Team"
-__all__ = ['obocar', 'OboChar']
+__all__ = ['obocar']
 
-
-# For testing/demo purposes
-if __name__ == "__main__" and not "__BROWSER__" in globals():
-    # Only run demo when executed directly from Python, not in browser
-    print("🚗 Obo Car Library - Demo")
-    
-    # Import the Obo Car library (simulated since we're in the same file)
-    # from obocar import obocar
-    
-    # Create a car instance
-    car = obocar()
-    
-    # Basic movement commands
-    print("🚗 Starting Obo Car simulation!")
-    
-    # Move forward 3 units
-    car.forward(5)
-    car.wait(0.5)
-    car.right(90)
-    car.right(90)
-    car.forward(5)
-    car.right(90)
-    car.forward(5)
-    print(car.angle)
-    # Check status
-    distance = car.distance()
-    print(f"Mission complete! Distance: {distance:.1f}m")
-    
-    print("Demo completed successfully!")
