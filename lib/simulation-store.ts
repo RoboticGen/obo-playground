@@ -10,8 +10,7 @@ export enum AnimationState {
   TURNING_LEFT = 'turning_left',
   TURNING_RIGHT = 'turning_right',
   STOPPING = 'stopping',
-  ACCELERATING = 'accelerating',
-  DECELERATING = 'decelerating'
+
 }
 
 // Movement Commands
@@ -202,15 +201,12 @@ const stateTransitions: Record<AnimationState, AnimationState[]> = {
     AnimationState.MOVING_BACKWARD,
     AnimationState.TURNING_LEFT,
     AnimationState.TURNING_RIGHT,
-    AnimationState.ACCELERATING
   ],
   [AnimationState.MOVING_FORWARD]: [
     AnimationState.IDLE,
     AnimationState.STOPPING,
     AnimationState.TURNING_LEFT,
-    AnimationState.TURNING_RIGHT,
-    AnimationState.ACCELERATING,
-    AnimationState.DECELERATING
+    AnimationState.TURNING_RIGHT
   ],
   [AnimationState.MOVING_BACKWARD]: [
     AnimationState.IDLE,
@@ -232,16 +228,6 @@ const stateTransitions: Record<AnimationState, AnimationState[]> = {
   ],
   [AnimationState.STOPPING]: [
     AnimationState.IDLE
-  ],
-  [AnimationState.ACCELERATING]: [
-    AnimationState.MOVING_FORWARD,
-    AnimationState.DECELERATING,
-    AnimationState.STOPPING
-  ],
-  [AnimationState.DECELERATING]: [
-    AnimationState.IDLE,
-    AnimationState.STOPPING,
-    AnimationState.ACCELERATING
   ]
 }
 

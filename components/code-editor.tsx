@@ -33,7 +33,6 @@ interface OboCarAPI {
   move: (distance: number, direction?: number, rotation?: number) => void
   backward: (distance: number) => void // Add dedicated backward method
   rotate: (angle: number) => void
-  getSensor?: (direction: "front" | "left" | "right" | "back") => number
   getPosition?: () => [number, number, number]
   getBattery?: () => number
   getDistanceTraveled?: () => number
@@ -176,9 +175,9 @@ sys.stdout = output_capture
               setPyodide(pyodideInstance)
               setIsLoading(false)
               setLoadingProgress("")
-              console.log("[v0] Pyodide and OBO Car library initialized successfully")
+              console.log("Pyodide and OBO Car library initialized successfully")
             } catch (err) {
-              console.error("[v0] Failed to initialize Pyodide:", err)
+              console.error("Failed to initialize Pyodide:", err)
               setError("Failed to initialize Python environment")
               setIsLoading(false)
             }
@@ -192,7 +191,7 @@ sys.stdout = output_capture
           document.head.appendChild(script)
         }
       } catch (err) {
-        console.error("[v0] Failed to load Pyodide:", err)
+        console.error("] Failed to load Pyodide:", err)
         setError("Failed to load Python environment")
         setIsLoading(false)
       }
@@ -211,9 +210,9 @@ sys.stdout = output_capture
       if (pyodide) {
         try {
           pyodide.globals.set("carControlAPI", carAPI)
-          console.log("[v0] CarControlAPI connected to Pyodide")
+          console.log("CarControlAPI connected to Pyodide")
         } catch (err) {
-          console.error("[v0] Failed to connect CarControlAPI to Pyodide:", err)
+          console.error("Failed to connect CarControlAPI to Pyodide:", err)
         }
       }
     }
