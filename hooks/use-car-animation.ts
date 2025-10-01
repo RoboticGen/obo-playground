@@ -92,8 +92,41 @@ export function useCarAnimation({ carRef }: CarAnimationHookProps) {
   // Initialize car position with current rotation from the store
   useEffect(() => {
     if (carRef.current) {
-      // Set the car's position
-      carRef.current.setTranslation(carPhysics.position, true)
+      // Get current car positions
+      const rigidBodyPos = carRef.current.translation();
+      const hasMovedFromOrigin = 
+        Math.abs(rigidBodyPos.x) > 0.1 || 
+        Math.abs(rigidBodyPos.z) > 0.1;
+      
+      // CRITICAL: Only set the car's position on first initialization
+      // or if the car hasn't moved from origin yet
+      if (!isInitialized.current || !hasMovedFromOrigin) {
+        console.log('Initializing car position from store');
+        carRef.current.setTranslation(carPhysics.position, true);
+        
+        // Store this as our initial idle position
+        idlePositionRef.current = { 
+          x: carPhysics.position.x, 
+          y: carPhysics.position.y, 
+          z: carPhysics.position.z 
+        };
+        console.log('Initialized idle position reference:', idlePositionRef.current);
+      } else {
+        // If the car has moved, use its current position as the source of truth
+        // but update the physics store to match it
+        if (hasMovedFromOrigin && isInitialized.current) {
+          console.log('Car has moved, preserving RigidBody position:', rigidBodyPos);
+          
+          // Update the store to match the RigidBody position
+          const newPos = new THREE.Vector3(rigidBodyPos.x, rigidBodyPos.y, rigidBodyPos.z);
+          if (!newPos.equals(carPhysics.position)) {
+            console.log('Updating store position to match RigidBody');
+            updateCarPhysics({
+              position: newPos
+            });
+          }
+        }
+      }
       
       // Set the rotation from the physics store to maintain correct rotation
       const storeRotation = new THREE.Quaternion().setFromEuler(carPhysics.rotation)
@@ -103,17 +136,10 @@ export function useCarAnimation({ carRef }: CarAnimationHookProps) {
       carRef.current.setLinvel({ x: 0, y: 0, z: 0 }, true)
       carRef.current.setAngvel({ x: 0, y: 0, z: 0 }, true)
       
-      // Only log if rotation has changed significantly
-      const currentRotationKey = `${carPhysics.rotation.y.toFixed(3)}-${carPhysics.position.x.toFixed(2)}-${carPhysics.position.y.toFixed(2)}-${carPhysics.position.z.toFixed(2)}`;
-      if (lastInitialization.current !== currentRotationKey) {
-        //console.log(`Initialized car with rotation: ${carPhysics.rotation.y * (180 / Math.PI)}° (${carPhysics.rotation.y.toFixed(4)} rad)`)
-        lastInitialization.current = currentRotationKey;
-      }
-      
       // Mark as initialized
       isInitialized.current = true;
     }
-  }, [isRunning, carRef, carPhysics.position, carPhysics.rotation])
+  }, [isRunning, carRef, carPhysics.position, carPhysics.rotation, updateCarPhysics])
 
   // Log rotation data every 3 seconds for debugging
   useEffect(() => {
@@ -139,12 +165,22 @@ export function useCarAnimation({ carRef }: CarAnimationHookProps) {
     const currentRot = rigidBody.rotation()
     
     // Update physics state from actual 3D position
-    updateCarPhysics({
-      position: new THREE.Vector3(currentPos.x, currentPos.y, currentPos.z),
-      rotation: new THREE.Euler().setFromQuaternion(
-        new THREE.Quaternion(currentRot.x, currentRot.y, currentRot.z, currentRot.w)
-      )
-    })
+    // IMPORTANT: Keep the X position synchronized to prevent jumps
+    const currentStorePos = carPhysics.position;
+    
+    // Only update if there's a significant difference to avoid constant micro-adjustments
+    if (
+      Math.abs(currentPos.x - currentStorePos.x) > 0.05 ||
+      Math.abs(currentPos.y - currentStorePos.y) > 0.05 ||
+      Math.abs(currentPos.z - currentStorePos.z) > 0.05
+    ) {
+      updateCarPhysics({
+        position: new THREE.Vector3(currentPos.x, currentPos.y, currentPos.z),
+        rotation: new THREE.Euler().setFromQuaternion(
+          new THREE.Quaternion(currentRot.x, currentRot.y, currentRot.z, currentRot.w)
+        )
+      });
+    }
 
     switch (carAnimation.currentState) {
       case AnimationState.MOVING_FORWARD:
@@ -565,7 +601,7 @@ export function useCarAnimation({ carRef }: CarAnimationHookProps) {
     }
   }
 
-  // Use frame to update animation and enforce straight-line movement
+  // Use frame to update animation and enforce movement rules
   useFrame((state, delta) => {
     // Early return if carRef is not available or not initialized
     if (!carRef.current || !isInitialized.current) {
@@ -579,12 +615,16 @@ export function useCarAnimation({ carRef }: CarAnimationHookProps) {
     if (carRef.current) {
       carRef.current.setAngvel({ x: 0, y: 0, z: 0 }, true)
       
-      // Force X position and velocity to zero to ensure straight-line movement
+      // Get current position and velocity
       const pos = carRef.current.translation()
       const vel = carRef.current.linvel()
       
-      if (Math.abs(pos.x) > 0.01 || Math.abs(vel.x) > 0.01) {
-        carRef.current.setTranslation({ x: 0, y: pos.y, z: pos.z }, true)
+      // IMPORTANT: Only enforce X position for active movement states, not IDLE
+      // This allows the car to have non-zero X positions when commands complete
+      if ((carAnimation.currentState === AnimationState.MOVING_FORWARD || 
+           carAnimation.currentState === AnimationState.MOVING_BACKWARD) &&
+           (Math.abs(vel.x) > 0.01)) {
+        // Only zero out the X velocity, not position
         carRef.current.setLinvel({ x: 0, y: vel.y, z: vel.z }, true)
       }
       
@@ -681,71 +721,85 @@ export function useCarAnimation({ carRef }: CarAnimationHookProps) {
         const velocity = carRef.current.linvel();
         const currPos = carRef.current.translation();
         
-        // Check for unexpected velocity (use a higher threshold to avoid false positives)
-        // Use a higher threshold for Z velocity since that's where we're experiencing issues
-        const hasUnexpectedVelocity = Math.abs(velocity.x) > 0.1 || 
-                                     Math.abs(velocity.y) > 0.1 || 
-                                     Math.abs(velocity.z) > 2.0; // Further increased Z threshold to reduce false positives
+        // Check for unexpected velocity (only fix extreme cases)
+        // Use much higher thresholds to only catch dramatic issues
+        const hasUnexpectedVelocity = Math.abs(velocity.x) > 0.5 || 
+                                     Math.abs(velocity.y) > 0.5 || 
+                                     Math.abs(velocity.z) > 5.0; // Much higher threshold to avoid interference
         
-        // Check if the car has drifted from its idle position
-        let hasDrifted = false;
-        if (idlePositionRef.current) {
-          const driftX = Math.abs(currPos.x - idlePositionRef.current.x);
-          const driftY = Math.abs(currPos.y - idlePositionRef.current.y);
-          const driftZ = Math.abs(currPos.z - idlePositionRef.current.z);
-          
-          // Use higher thresholds to reduce false positives
-          hasDrifted = driftX > 0.1 || driftY > 0.1 || driftZ > 2.0; // Further increased thresholds
-          
-          // Only log significant drifts in development mode
-          if (hasDrifted && process.env.NODE_ENV === 'development') {
-            console.debug(`Car has drifted in IDLE state. Drift: x=${driftX.toFixed(3)}, y=${driftY.toFixed(3)}, z=${driftZ.toFixed(3)}`);
-          }
+        // Check if the car has drifted dramatically from physics store position
+        let hasDramaticDrift = false;
+        const storePos = carPhysics.position;
+        const driftFromStoreX = Math.abs(currPos.x - storePos.x);
+        const driftFromStoreY = Math.abs(currPos.y - storePos.y);
+        const driftFromStoreZ = Math.abs(currPos.z - storePos.z);
+        
+        // Only consider dramatic drift (values much higher than before)
+        hasDramaticDrift = driftFromStoreX > 1.0 || driftFromStoreY > 1.0 || driftFromStoreZ > 1.0; // Lower Z threshold
+        
+        // Only log significant drifts
+        if (hasDramaticDrift) {
+          console.log(`DRAMATIC car drift detected! Store: (${storePos.x.toFixed(2)},${storePos.y.toFixed(2)},${storePos.z.toFixed(2)}), RigidBody: (${currPos.x.toFixed(2)},${currPos.y.toFixed(2)},${currPos.z.toFixed(2)})`);
         }
         
-        // Throttle corrections to avoid constant resetting
+        // Special case: if the X coordinate is exactly 0 but should be non-zero according to store
+        // This catches the issue when X is reset to zero incorrectly after a command sequence
+        const isXResetToZero = Math.abs(currPos.x) < 0.01 && Math.abs(storePos.x) > 0.1;
+        
+        // Throttle corrections with even longer interval
         const now = Date.now();
         const timeSinceLastCorrection = now - lastDriftCorrectionTime.current;
-        const shouldApplyCorrection = timeSinceLastCorrection > 1000; // Increased from 500ms to 1000ms
+        const shouldApplyCorrection = timeSinceLastCorrection > 1000; // Shorter interval for more responsive correction
         
-        if ((hasUnexpectedVelocity || hasDrifted) && shouldApplyCorrection) {
-          // Only log significant movement issues
-          if (Math.abs(velocity.x) > 0.2 || Math.abs(velocity.y) > 0.2 || Math.abs(velocity.z) > 3.0) {
-            console.log('Stopping unexpected movement in IDLE state: ', 
-              `x: ${velocity.x.toFixed(3)}, y: ${velocity.y.toFixed(3)}, z: ${velocity.z.toFixed(3)}`);
+        // Immediately fix the X=0 case, otherwise use normal rules
+        if ((isXResetToZero || hasUnexpectedVelocity || hasDramaticDrift) && shouldApplyCorrection) {
+          if (isXResetToZero) {
+            console.log(`🚨 Critical issue: X coordinate reset to 0 when it should be ${storePos.x.toFixed(2)} - fixing immediately`);
+          } else {
+            console.log('Fixing extreme physics issues - this should be rare');
           }
           
           lastDriftCorrectionTime.current = now;
           
-          // Hard reset of all physics properties but keep the rotation
+          // Reset velocity
           carRef.current.setLinvel({ x: 0, y: 0, z: 0 }, true);
           carRef.current.setAngvel({ x: 0, y: 0, z: 0 }, true);
           
-          // Save the current rotation from store before resetting position
-          const currentRotation = new THREE.Quaternion().setFromEuler(carPhysics.rotation);
+          // Get the car position from the store - this is the authoritative position
+          const storePosition = carPhysics.position.clone();
+          const storeRotation = new THREE.Quaternion().setFromEuler(carPhysics.rotation);
           
-          // If we have a stored idle position, reset to that position
-          if (idlePositionRef.current && hasDrifted) {
-            //console.log('Resetting car to last known idle position while preserving rotation');
-            carRef.current.setTranslation({
-              x: idlePositionRef.current.x,
-              y: idlePositionRef.current.y,
-              // Maintain Z position to avoid constant z-axis resets
-              z: idlePositionRef.current.z
-            }, true);
+          // Use the position from the store (simulation-store.ts) as source of truth
+          carRef.current.setTranslation({
+            x: storePosition.x,
+            y: storePosition.y, 
+            z: storePosition.z
+          }, true);
             
-            // Preserve the rotation
-            carRef.current.setRotation(currentRotation, true);
-          } else {
-            // Otherwise freeze at current position
-            carRef.current.setTranslation({ x: currPos.x, y: currPos.y, z: currPos.z }, true);
-            
-            // Preserve the rotation
-            carRef.current.setRotation(currentRotation, true);
-            
-            // Update our idle position reference
-            idlePositionRef.current = { x: currPos.x, y: currPos.y, z: currPos.z };
-          }
+          // Apply rotation from the store
+          carRef.current.setRotation(storeRotation, true);
+          
+          // Double-check that the position was applied correctly
+          setTimeout(() => {
+            if (carRef.current) {
+              const newPos = carRef.current.translation();
+              if (Math.abs(newPos.x - storePosition.x) > 0.1) {
+                console.log(`🚨 Position correction failed! Trying again. Expected X: ${storePosition.x.toFixed(2)}, Got: ${newPos.x.toFixed(2)}`);
+                carRef.current.setTranslation({
+                  x: storePosition.x,
+                  y: storePosition.y, 
+                  z: storePosition.z
+                }, true);
+              }
+            }
+          }, 50);
+          
+          // Update idle position reference to match store
+          idlePositionRef.current = { 
+            x: storePosition.x, 
+            y: storePosition.y, 
+            z: storePosition.z 
+          };
           
           // Update physics state to ensure consistency
           updateCarPhysics({

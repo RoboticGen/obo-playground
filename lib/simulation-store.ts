@@ -321,22 +321,57 @@ export const useSimulationStore = create<SimulationStore>()(
       try {
         await executeCommand(nextCommand, get, set)
 
-        // Ensure animation state is IDLE when command completes
-        set((state) => ({
-          commandHistory: [...state.commandHistory, { ...nextCommand, executed: true, endTime: Date.now() }],
-          currentCommand: null,
-          isExecuting: false,
-          metrics: { ...state.metrics, commandsExecuted: state.metrics.commandsExecuted + 1 },
-          carAnimation: {
-            ...state.carAnimation,
-            currentState: AnimationState.IDLE
-          },
-          carPhysics: {
-            ...state.carPhysics,
-            velocity: new THREE.Vector3(0, 0, 0),
-            angularVelocity: new THREE.Vector3(0, 0, 0)
-          }
-        }))
+        // Get the current position and rotation to preserve them
+        const currentPos = get().carPhysics.position.clone();
+        const currentRot = get().carPhysics.rotation.clone();
+        
+        console.log(`Command completed. Final position: (${currentPos.x.toFixed(2)}, ${currentPos.y.toFixed(2)}, ${currentPos.z.toFixed(2)}), rotation: ${(currentRot.y * 180 / Math.PI).toFixed(1)}°`);
+        
+        // IMPORTANT: Ensure we absolutely preserve the final position
+        // after the command sequence completes
+        set((state) => {
+          // First, create a snapshot of the position and rotation that we want to preserve
+          const finalPos = currentPos.clone();
+          const finalRot = currentRot.clone();
+          
+          // Use setTimeout to make this update happen after any other pending updates
+          setTimeout(() => {
+            const latestState = get();
+            // Check if position changed between our set and this callback
+            if (!latestState.carPhysics.position.equals(finalPos)) {
+              console.log('Position changed after command completion - forcing correction');
+              // Force position back to what we want
+              set({
+                carPhysics: {
+                  ...latestState.carPhysics,
+                  position: finalPos.clone(),
+                  rotation: finalRot.clone()
+                }
+              });
+            }
+          }, 100);
+          
+          // Return the immediate state update
+          return {
+            commandHistory: [...state.commandHistory, { ...nextCommand, executed: true, endTime: Date.now() }],
+            currentCommand: null,
+            isExecuting: false,
+            metrics: { ...state.metrics, commandsExecuted: state.metrics.commandsExecuted + 1 },
+            carAnimation: {
+              ...state.carAnimation,
+              currentState: AnimationState.IDLE,
+              targetPosition: finalPos,
+              targetRotation: finalRot
+            },
+            carPhysics: {
+              ...state.carPhysics,
+              position: finalPos,  // Preserve current position
+              rotation: finalRot,  // Preserve current rotation
+              velocity: new THREE.Vector3(0, 0, 0),
+              angularVelocity: new THREE.Vector3(0, 0, 0)
+            }
+          };
+        });
       } catch (error) {
         console.error('Command execution error:', error)
         set({
@@ -394,19 +429,70 @@ export const useSimulationStore = create<SimulationStore>()(
     clearObstacles: () => set({ obstacles: [] }),
 
     // Simulation Actions
-    resetSimulation: () => set({
-      isRunning: false,
-      isPaused: false,
-      isExecuting: false,
-      carPhysics: { ...defaultCarPhysics },
-      carAnimation: { ...defaultCarAnimation },
-      sensorData: { ...defaultSensorData },
-      metrics: { ...defaultMetrics },
-      cumulativeAngle: 0, // Reset cumulative angle
-      commandQueue: [],
-      currentCommand: null,
-      executionError: null
-    }),
+    resetSimulation: () => {
+      console.log('🚨 Reset simulation called - this should not happen after command sequence');
+      
+      // Get the current state
+      const currentState = get();
+      
+      // Check if the car has moved significantly from origin
+      const hasMovedFromOrigin = 
+        Math.abs(currentState.carPhysics.position.x) > 0.1 || 
+        Math.abs(currentState.carPhysics.position.z) > 0.1;
+      
+      // Preserve position if the car has moved, otherwise use default
+      const positionToUse = hasMovedFromOrigin 
+        ? currentState.carPhysics.position.clone()
+        : new THREE.Vector3(0, 1, 0);
+      
+      // Preserve rotation
+      const rotationToUse = currentState.carPhysics.rotation.clone();
+      
+      console.log(`Reset simulation - ${hasMovedFromOrigin ? 'PRESERVING' : 'RESETTING'} position: (${positionToUse.x.toFixed(2)},${positionToUse.y.toFixed(2)},${positionToUse.z.toFixed(2)})`);
+      
+      // Reset with preserved position and rotation
+      set({
+        isRunning: false,
+        isPaused: false,
+        isExecuting: false,
+        carPhysics: { 
+          ...defaultCarPhysics,
+          position: positionToUse,
+          rotation: rotationToUse
+        },
+        carAnimation: { 
+          ...defaultCarAnimation,
+          targetPosition: positionToUse,
+          targetRotation: rotationToUse
+        },
+        sensorData: { ...defaultSensorData },
+        metrics: { ...defaultMetrics },
+        cumulativeAngle: currentState.cumulativeAngle, // Preserve cumulative angle too
+        commandQueue: [],
+        currentCommand: null,
+        executionError: null
+      });
+      
+      // Schedule an additional update to ensure the position sticks
+      setTimeout(() => {
+        const latestState = get();
+        if (latestState.isRunning && !latestState.carPhysics.position.equals(positionToUse)) {
+          console.log('Position changed after reset - forcing correction');
+          set({
+            carPhysics: {
+              ...latestState.carPhysics,
+              position: positionToUse.clone(),
+              rotation: rotationToUse.clone()
+            },
+            carAnimation: {
+              ...latestState.carAnimation,
+              targetPosition: positionToUse.clone(),
+              targetRotation: rotationToUse.clone()
+            }
+          });
+        }
+      }, 100);
+    },
 
     updateMetrics: () => {
       const state = get()
@@ -680,10 +766,25 @@ function executeTurnLeftCommand(
   
   // Set target rotation based on processed cumulative angle
   const targetRot = new THREE.Euler(0, THREE.MathUtils.degToRad(processedAngle), 0)
+  
+  // Save the current position before rotation - this is critical
+  const currentPos = get().carPhysics.position.clone()
 
   animateToRotation(targetRot, duration, get, set, () => {
     // Update the cumulative angle in store
     updateCumulativeAngle(newCumulativeAngle)
+    
+    // Important: preserve the current position while updating rotation
+    // This prevents the position from jumping back after a sequence of commands
+    set((state) => ({
+      carPhysics: {
+        ...state.carPhysics,
+        position: currentPos.clone(), // Keep the same position
+        rotation: targetRot.clone(),  // But update rotation
+        velocity: new THREE.Vector3(0, 0, 0),
+        angularVelocity: new THREE.Vector3(0, 0, 0)
+      }
+    }))
     
     // Sync with Python using cumulative angle
     if (typeof window !== 'undefined' && (window as any).oboCarAPI) {
@@ -717,10 +818,25 @@ function executeTurnRightCommand(
   
   // Set target rotation based on processed cumulative angle
   const targetRot = new THREE.Euler(0, THREE.MathUtils.degToRad(processedAngle), 0)
+  
+  // Save the current position before rotation - this is critical
+  const currentPos = get().carPhysics.position.clone()
 
   animateToRotation(targetRot, duration, get, set, () => {
     // Update the cumulative angle in store
     updateCumulativeAngle(newCumulativeAngle)
+    
+    // Important: preserve the current position while updating rotation
+    // This prevents the position from jumping back after a sequence of commands
+    set((state) => ({
+      carPhysics: {
+        ...state.carPhysics,
+        position: currentPos.clone(), // Keep the same position
+        rotation: targetRot.clone(),  // But update rotation
+        velocity: new THREE.Vector3(0, 0, 0),
+        angularVelocity: new THREE.Vector3(0, 0, 0)
+      }
+    }))
     
     // Sync with Python using cumulative angle
     if (typeof window !== 'undefined' && (window as any).oboCarAPI) {
@@ -904,17 +1020,23 @@ function animateToRotation(
   const finalCleanup = () => {
     console.log(`Finalizing rotation to ${targetDegrees.toFixed(2)}°`)      
 
-    // Force exact target rotation and zero out velocities
+    // Get the current position to preserve it
+    const currentPos = get().carPhysics.position.clone();
+
+    // Force exact target rotation and zero out velocities while preserving position
     set((state) => ({
       carPhysics: {
         ...state.carPhysics,
+        position: currentPos,  // Explicitly maintain current position
         rotation: targetRot.clone(),
+        velocity: new THREE.Vector3(0, 0, 0),
         angularVelocity: new THREE.Vector3(0, 0, 0)
       },
       carAnimation: {
         ...state.carAnimation,
         animationProgress: 1,
-        targetRotation: targetRot.clone()
+        targetRotation: targetRot.clone(),
+        targetPosition: currentPos  // Update target position too
       }
     }))
   }
