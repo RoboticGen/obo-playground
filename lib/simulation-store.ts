@@ -91,6 +91,9 @@ export interface SimulationStore {
   // Python Synchronization
   cumulativeAngle: number // Track total rotation for Python sync
 
+  // Event-driven execution
+  activeLoops: NodeJS.Timeout[] // Track active event loops
+  
   // Command System
   commandQueue: MovementCommand[]
   currentCommand: MovementCommand | null
@@ -140,6 +143,11 @@ export interface SimulationStore {
   addObstacle: (obstacle: Omit<SimulationStore['obstacles'][0], 'id'>) => void    
   removeObstacle: (id: string) => void
   clearObstacles: () => void
+  
+  // Event Loop Management
+  registerEventLoop: (id: NodeJS.Timeout) => void
+  clearEventLoop: (id: NodeJS.Timeout) => void
+  clearAllEventLoops: () => void
 
   // Simulation Actions
   resetSimulation: () => void
@@ -249,6 +257,8 @@ export const useSimulationStore = create<SimulationStore>()(
     
     cumulativeAngle: 0, // Initialize Python cumulative angle
 
+    activeLoops: [], // Initialize active event loops array
+    
     commandQueue: [],
     currentCommand: null,
     commandHistory: [],
@@ -309,9 +319,15 @@ export const useSimulationStore = create<SimulationStore>()(
 
     executeNextCommand: async () => {
       const state = get()
-      if (state.commandQueue.length === 0 || state.isExecuting) return
+      // Don't start a new command if we're already executing one or if the queue is empty
+      if (state.commandQueue.length === 0 || state.isExecuting) {
+        console.log(`Cannot execute next command: ${state.isExecuting ? 'Already executing' : 'Queue empty'}`);
+        return;
+      }
 
+      console.log(`⏩ Starting next command execution, queue length: ${state.commandQueue.length}`);
       const nextCommand = state.commandQueue[0]
+      // Set executing state and remove command from queue
       set({
         isExecuting: true,
         currentCommand: nextCommand,
@@ -327,32 +343,14 @@ export const useSimulationStore = create<SimulationStore>()(
         
         console.log(`Command completed. Final position: (${currentPos.x.toFixed(2)}, ${currentPos.y.toFixed(2)}, ${currentPos.z.toFixed(2)}), rotation: ${(currentRot.y * 180 / Math.PI).toFixed(1)}°`);
         
-        // IMPORTANT: Ensure we absolutely preserve the final position
-        // after the command sequence completes
+        // Complete the command execution - clear the current command marker
         set((state) => {
           // First, create a snapshot of the position and rotation that we want to preserve
           const finalPos = currentPos.clone();
           const finalRot = currentRot.clone();
           
-          // Use setTimeout to make this update happen after any other pending updates
-          setTimeout(() => {
-            const latestState = get();
-            // Check if position changed between our set and this callback
-            if (!latestState.carPhysics.position.equals(finalPos)) {
-              console.log('Position changed after command completion - forcing correction');
-              // Force position back to what we want
-              set({
-                carPhysics: {
-                  ...latestState.carPhysics,
-                  position: finalPos.clone(),
-                  rotation: finalRot.clone()
-                }
-              });
-            }
-          }, 100);
-          
           // Return the immediate state update
-          return {
+          const result = {
             commandHistory: [...state.commandHistory, { ...nextCommand, executed: true, endTime: Date.now() }],
             currentCommand: null,
             isExecuting: false,
@@ -371,6 +369,40 @@ export const useSimulationStore = create<SimulationStore>()(
               angularVelocity: new THREE.Vector3(0, 0, 0)
             }
           };
+          
+          // Process next command immediately if there are more in the queue
+          // This ensures continuous execution of commands in a loop
+          setTimeout(() => {
+            const latestState = get();
+            
+            // Ensure the position is absolutely preserved
+            if (!latestState.carPhysics.position.equals(finalPos)) {
+              console.log('Position changed after command completion - forcing correction');
+              set({
+                carPhysics: {
+                  ...latestState.carPhysics,
+                  position: finalPos.clone(),
+                  rotation: finalRot.clone()
+                }
+              });
+            }
+            
+            // Critical: Always check the command queue and execute next command if available
+            if (latestState.commandQueue.length > 0 && latestState.isRunning) {
+              console.log(`🔄 Auto-executing next command, ${latestState.commandQueue.length} commands remaining`);
+              // Use requestAnimationFrame for smoother timing
+              requestAnimationFrame(() => {
+                const currentState = get();
+                if (!currentState.isExecuting && currentState.commandQueue.length > 0) {
+                  currentState.executeNextCommand();
+                }
+              });
+            } else {
+              console.log(`✅ Command sequence complete, queue empty: ${latestState.commandQueue.length === 0}`);
+            }
+          }, 50);
+          
+          return result;
         });
       } catch (error) {
         console.error('Command execution error:', error)
@@ -428,9 +460,32 @@ export const useSimulationStore = create<SimulationStore>()(
 
     clearObstacles: () => set({ obstacles: [] }),
 
+    // Event Loop Management
+    registerEventLoop: (id: NodeJS.Timeout) => set((state) => ({
+      activeLoops: [...state.activeLoops, id]
+    })),
+    
+    clearEventLoop: (id: NodeJS.Timeout) => set((state) => ({
+      activeLoops: state.activeLoops.filter(loopId => loopId !== id)
+    })),
+    
+    clearAllEventLoops: () => {
+      const state = get()
+      state.activeLoops.forEach(id => {
+        // Clear any active interval
+        if (typeof window !== 'undefined') {
+          clearInterval(id)
+        }
+      })
+      set({ activeLoops: [] })
+    },
+    
     // Simulation Actions
     resetSimulation: () => {
       console.log('🚨 Reset simulation called - this should not happen after command sequence');
+      
+      // Clear any active event loops first
+      get().clearAllEventLoops();
       
       // Get the current state
       const currentState = get();
@@ -598,6 +653,15 @@ async function executeCommand(
     command.startTime = startTime
 
     console.log(`Executing command: ${command.type} with value ${command.value || 1} and duration ${command.duration || 1000}ms`)
+    
+    // Mark all commands as executed immediately - this allows Python loops to continue correctly
+    set((state) => ({
+      currentCommand: {
+        ...command,
+        executed: true,
+      }
+    }))
+    
     // Process all command types
     switch (command.type) {
       case 'forward':
@@ -606,7 +670,6 @@ async function executeCommand(
       case 'backward':
         executeBackwardCommand(command, get, set, resolve)
         break
-      // Skip all other command types - resolve immediately
       case 'turn_left':
         console.log(`Executing turn left command: ${command.value} degrees`)      
         executeTurnLeftCommand(command, get, set, resolve)

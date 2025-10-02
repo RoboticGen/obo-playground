@@ -2,8 +2,16 @@
 import random
 import math
 import time
-from typing import Dict, Tuple, List, Optional
+from typing import Dict, Tuple, List, Optional, Callable
 from js import window
+
+# Flag to check if we're in a browser environment
+IN_BROWSER = False
+try:
+    from js import window
+    IN_BROWSER = hasattr(window, "oboCarAPI")
+except:
+    pass
 
 class OboCar:
     """
@@ -29,11 +37,7 @@ class OboCar:
         
     def _is_browser_env(self):
         """Check if running in browser environment with JS bridge."""
-        try:
-            import js
-            return hasattr(js.window, "oboCarAPI")
-        except ImportError:
-            return False
+        return IN_BROWSER
         
     # Removed _generate_random_obstacles method
     
@@ -237,13 +241,245 @@ class OboCar:
 
     def _check_collisions(self) ->bool:
         return False
+        
+    # Event-driven methods for non-blocking execution
+    def run_loop(self, loop_func: Callable, max_iterations: int = 1000):
+        """
+        Run a function in an event loop without blocking the UI
+        
+        Args:
+            loop_func: The function to call on each iteration
+            max_iterations: Safety limit for max iterations
+            
+        Returns:
+            Loop ID that can be used to cancel the loop
+        """
+        if not self._is_browser_env():
+            # In non-browser environments, run synchronously with safety limit
+            iteration = 0
+            while iteration < max_iterations:
+                try:
+                    should_continue = loop_func()
+                    if should_continue is False:
+                        break
+                except Exception as e:
+                    print(f"Error in loop: {e}")
+                    break
+                iteration += 1
+            return None
+        
+        # In browser environment, use the event system
+        remaining_iterations = [max_iterations]  # Use list for mutable reference
+        iteration_count = [0]  # Track the current iteration
+        
+        def step_function():
+            if remaining_iterations[0] <= 0:
+                print(f"⚠️ Maximum iterations ({max_iterations}) reached, stopping loop")
+                return False
+            
+            try:
+                # Print iteration information
+                iteration_count[0] += 1
+                print(f"🔄 Executing loop iteration #{iteration_count[0]}")
+                
+                # Execute the loop body - capture the result
+                should_continue = loop_func()
+                remaining_iterations[0] -= 1
+                
+                # If the loop function returns False explicitly, stop the loop
+                if should_continue is False:
+                    print("🛑 Loop function returned False, stopping loop")
+                    return False
+                
+                # Continue the loop after a delay
+                print("⏱️ Waiting for commands to complete before next iteration...")
+                return True
+                
+            except StopIteration:
+                print("🛑 StopIteration raised, stopping loop")
+                return False
+            except Exception as e:
+                print(f"❌ Error in event loop: {e}")
+                import traceback
+                traceback.print_exc()
+                return False
+        
+        # Register with JavaScript event system
+        try:
+            from js import window
+            # Make sure car is ready for movement
+            if hasattr(window, 'eventBus'):
+                window.eventBus.emit('simulation:state:change', True)
+                
+            loop_id = window.oboCarAPI.registerLoopCallback(step_function)
+            print(f"✅ Event loop started with ID: {loop_id}")
+            return loop_id
+        except Exception as e:
+            print(f"Error registering event loop: {e}")
+            return None
+        
+    def cancel_loop(self, loop_id):
+        """Cancel a running event loop"""
+        if not self._is_browser_env() or not loop_id:
+            return False
+            
+        try:
+            from js import window
+            window.oboCarAPI.clearLoopCallback(loop_id)
+            print(f"Cancelled event loop with ID: {loop_id}")
+            return True
+        except Exception as e:
+            print(f"Error cancelling loop: {e}")
+            return False
+    
+    def schedule_next(self, callback: Callable):
+        """Schedule a function to run on the next animation frame"""
+        if not self._is_browser_env():
+            callback()
+            return True
+            
+        try:
+            from js import window
+            return window.oboCarAPI.scheduleStep(callback)
+        except Exception as e:
+            print(f"Error scheduling step: {e}")
+            return False
+    
+    def sleep(self, seconds: float):
+        """
+        Non-blocking sleep function
+        
+        In browser mode, this returns immediately but schedules continuation
+        In non-browser mode, this blocks for the specified duration
+        """
+        if not self._is_browser_env():
+            time.sleep(seconds)
+            return
+            
+        # In browser mode, sleep is a no-op
+        # Actual timing should be handled by the event loop
+        pass
+        
+    def repeat(self, times: int, actions: Callable):
+        """
+        Repeat a set of actions a specific number of times
+        
+        Args:
+            times: Number of repetitions (use -1 for infinite)
+            actions: Function containing the actions to repeat
+            
+        Example:
+            car.repeat(4, lambda: car.forward(1) or car.turn_right(90))
+        """
+        # Create a wrapper function that counts repetitions
+        counter = [0]
+        
+        def repeat_wrapper():
+            if times > 0 and counter[0] >= times:
+                print(f"✅ Completed {times} repetitions")
+                return False
+                
+            if times >= 0:  # Finite loop
+                counter[0] += 1
+                print(f"🔄 Repetition {counter[0]} of {times}")
+            else:  # Infinite loop
+                counter[0] += 1
+                print(f"🔄 Repetition {counter[0]} (infinite)")
+                
+            try:
+                result = actions()
+                return result if result is not None else True
+            except Exception as e:
+                print(f"❌ Error in repetition {counter[0]}: {e}")
+                return False
+                
+        # Start the event loop with our wrapper
+        print(f"🔄 Starting repeat loop for {times if times >= 0 else 'infinite'} iterations")
+        return self.run_loop(repeat_wrapper)
 
 def obocar():
     """Create and return a new OboChar instance."""
     return OboCar()
 
+# Event loop decorator for cleaner syntax
+def event_loop(func):
+    """
+    Decorator to run a function in an event-driven loop.
+    
+    Example:
+        @event_loop
+        def my_loop():
+            car.forward(1)
+            car.turn_right(90)
+    
+    The decorated function will run in an event-driven way without blocking the UI.
+    """
+    # Get or create a car instance
+    try:
+        car_instance = None
+        # Check if there's a global car instance already
+        import builtins
+        if hasattr(builtins, '_obocar_instance'):
+            car_instance = builtins._obocar_instance
+        
+        # If no car instance found, create one
+        if car_instance is None:
+            car_instance = obocar()
+            
+        # Start the event loop
+        print(f"🔄 Starting event loop for function: {func.__name__}")
+        loop_id = car_instance.run_loop(func)
+        return loop_id
+    except Exception as e:
+        print(f"❌ Error setting up event loop: {e}")
+        # If we're not in browser, just run the function once
+        return func()
+
+# Simple repeat function for common patterns
+def repeat(times, actions):
+    """
+    Repeat a set of actions a specific number of times
+    
+    Args:
+        times: Number of repetitions (use -1 for infinite loop)
+        actions: Function containing the actions to repeat
+    
+    Example:
+        repeat(4, lambda: [car.forward(1), car.turn_right(90)])
+    """
+    car_instance = None
+    # Check if there's a global car instance already
+    try:
+        import builtins
+        if hasattr(builtins, '_obocar_instance'):
+            car_instance = builtins._obocar_instance
+        
+        # If no car instance found, create one
+        if car_instance is None:
+            car_instance = obocar()
+            
+        # Create a wrapper function to handle repetition
+        def repeat_wrapper():
+            nonlocal times
+            if times > 0:
+                times -= 1
+                actions()
+                return times > 0
+            elif times < 0:  # Infinite loop case
+                actions()
+                return True
+            else:
+                return False
+                
+        # Start the event loop
+        loop_id = car_instance.run_loop(repeat_wrapper)
+        return loop_id
+    except Exception as e:
+        print(f"❌ Error in repeat function: {e}")
+        return None
+
 # Make the main classes and functions available at module level
 __version__ = "0.1.0"
 __author__ = "Obo Car Team"
-__all__ = ['obocar']
+__all__ = ['obocar', 'event_loop', 'repeat']
 

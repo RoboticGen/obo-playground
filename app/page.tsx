@@ -39,10 +39,35 @@ export default function OboPlayground() {
     startExecution()
   }
 
-  // Initialize Python bridge
+  // Initialize Python bridge and set up animation loop
   useEffect(() => {
+    // Set up the OboCarBridge
     oboCarBridge.setupGlobalAPI()
-  }, [])
+    
+    // Set up animation loop that will drive the event system
+    const animationLoop = () => {
+      // Only process events if simulation is running
+      if (isRunning) {
+        // This animation loop will run regardless of Python code execution
+        // allowing for responsive UI even during infinite loops
+      }
+      
+      // Continue the animation loop
+      requestAnimationFrame(animationLoop)
+    }
+    
+    // Start animation loop
+    const animationFrameId = requestAnimationFrame(animationLoop)
+    
+    // Cleanup function
+    return () => {
+      cancelAnimationFrame(animationFrameId)
+      // Clear any active event loops on unmount
+      if (useSimulationStore.getState().activeLoops.length > 0) {
+        useSimulationStore.getState().clearAllEventLoops()
+      }
+    }
+  }, [isRunning])
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-background via-background to-muted">

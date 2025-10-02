@@ -28,6 +28,9 @@ export async function initializeOboCarPyodide(): Promise<void> {
       return;
     }
 
+    // Load runtime fixes first to ensure they're ready before Pyodide
+    await loadRuntimeFixes();
+
     // Load Pyodide script if not already loaded
     if (!(window as any).loadPyodide) {
       await loadPyodideScript();
@@ -47,6 +50,29 @@ export async function initializeOboCarPyodide(): Promise<void> {
     console.error("Failed to initialize Pyodide:", error);
     throw error;
   }
+}
+
+/**
+ * Load the Pyodide script
+ */
+/**
+ * Load runtime fixes script for better loop handling
+ */
+async function loadRuntimeFixes(): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.src = '/runtime-fixes.js';
+    script.async = true;
+    script.onload = () => {
+      console.log('✅ Runtime fixes loaded successfully');
+      resolve();
+    };
+    script.onerror = () => {
+      console.warn('⚠️ Failed to load runtime fixes, proceeding without them');
+      resolve(); // Resolve anyway to not block execution
+    };
+    document.body.appendChild(script);
+  });
 }
 
 /**
@@ -82,10 +108,30 @@ async function loadOboCarModule(): Promise<void> {
     
     // Write the module to the virtual filesystem
     pyodideInstance.FS.writeFile('obocar.py', code);
+    
+    // Try to load the loop fixes module
+    try {
+      const loopFixesResponse = await fetch('/python/loop_fixes.py');
+      if (loopFixesResponse.ok) {
+        const loopFixesCode = await loopFixesResponse.text();
+        pyodideInstance.FS.writeFile('loop_fixes.py', loopFixesCode);
+        console.log('✅ Loop fixes module loaded successfully');
+      }
+    } catch (loopError) {
+      console.warn('⚠️ Could not load loop fixes module:', loopError);
+    }
 
     // Test import to ensure it works
     const testResult = pyodideInstance.runPython(`
       try:
+        # Try to import loop fixes first
+        try:
+            import loop_fixes
+            print("✅ Loop fixes imported successfully")
+        except Exception as e:
+            print(f"⚠️ Loop fixes import error: {str(e)}")
+            
+        # Now import the main module
         from obocar import obocar
         car = obocar()
         "success"

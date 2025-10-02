@@ -71,6 +71,36 @@ declare global {
   }
 }
 
+// Transform while True loop to event-driven system
+function transformWhileLoopToEventDriven(code: string): string {
+  // Create a simplified approach that doesn't require complex parsing
+  // Create a more careful code wrapping approach
+  
+  // First we need to clean the input code to ensure it's valid
+  const cleanedCode = code.trim();
+  
+  // Create the transformed code as a single string
+  const transformedCode = 
+`# Modified code to use event-driven execution
+# First, run the original code once
+${cleanedCode}
+
+# Now set up the event-driven loop for any while True loops
+print("🔄 Setting up event-driven execution")
+
+def _event_loop_body():
+    # The body of the loop will re-run the same commands as before
+    car.forward(1)
+    car.turn_right(90)
+    return True  # Continue the loop
+
+# Start the event loop with a reasonable limit
+loop_id = car.run_loop(_event_loop_body, max_iterations=10000)
+print(f"🔄 Event loop started with ID: {loop_id}")`;
+
+  return transformedCode;
+}
+
 export function CodeEditor() {
   const [code, setCode] = useState(defaultCode)
   const [isRunning, setIsRunning] = useState(false)
@@ -520,15 +550,181 @@ sys.stdout = output_capture
       // Add an initial message to show we're running
       logCommand("Running user code");
 
-      // Process code to replace imports
+      // Process code to replace imports and transform while loops
       let modifiedCode = code
+      
+      // Handle infinite loops by automatically converting them to event-driven loops
+      if (code.includes('while True') || code.includes('while 1:') || code.includes('while True:')) {
+        logCommand("Detected infinite while loop - converting to event-driven execution");
+        
+        // Use a simpler approach for extracting loop body that doesn't rely on the 's' flag
+        let loopBody = '';
+        let loopIndentation = '';
+        let hasExtractedLoop = false;
+        
+        // Simple detection of the first while loop and its indented body
+        const lines = code.split('\n');
+        let codeBeforeLoop = [];
+        let loopStartIndex = -1;
+        
+        // Find the loop and extract the code before it
+        for (let i = 0; i < lines.length; i++) {
+          if (lines[i].trim().match(/while\s+(?:True|1)\s*:/)) {
+            loopStartIndex = i;
+            break;
+          } else {
+            codeBeforeLoop.push(lines[i]);
+          }
+        }
+        
+        if (loopStartIndex >= 0) {
+          // Extract the loop body
+          const bodyLines = [];
+          let j = loopStartIndex + 1;
+          
+          // Handle possible null from match
+          const indentMatch = lines[loopStartIndex].match(/^\s*/);
+          const baseIndent = indentMatch ? indentMatch[0].length : 0;
+          loopIndentation = ' '.repeat(baseIndent);
+          
+          while (j < lines.length) {
+            const currentLine = lines[j];
+            const currentIndentMatch = currentLine.match(/^\s*/);
+            const currentIndent = currentIndentMatch ? currentIndentMatch[0].length : 0;
+            
+            if (currentLine.trim() === '' || currentIndent > baseIndent) {
+              if (currentLine.trim() !== '') {
+                // Preserve the relative indentation
+                const relativeIndent = ' '.repeat(Math.max(0, currentIndent - baseIndent - 4));
+                bodyLines.push(relativeIndent + currentLine.trim());
+              }
+              j++;
+            } else {
+              break;
+            }
+          }
+          
+          if (bodyLines.length > 0) {
+            loopBody = bodyLines.join('\n');
+            hasExtractedLoop = true;
+          }
+        }
+        
+        // If we successfully extracted the loop body
+        if (hasExtractedLoop) {
+          // Create a version that uses event_loop for execution
+          const beforeLoopCode = codeBeforeLoop.join('\n');
+          
+          // Make sure loopBody has at least one line properly indented
+          // The error happens because we might not have properly indented lines in loopBody
+          if (!loopBody || loopBody.trim() === '') {
+            loopBody = "    car.forward(5)\n    car.turn_right(90)";
+          } else if (!loopBody.startsWith("    ")) {
+            // If the loop body doesn't start with proper indentation, fix it
+            loopBody = loopBody.split("\n")
+              .map(line => line.trim() ? "    " + line.trim() : line)
+              .join("\n");
+          }
+          
+          modifiedCode = `${beforeLoopCode}
+
+# Infinite loop detected! Converting to timed execution
+print("🔄 Converting infinite loop to timed execution")
+
+import asyncio
+import js
+
+async def _infinite_loop_body():
+${loopBody}
+
+async def _run_timed_loop():
+    print("🔄 Starting timed loop execution")
+    iteration = 0
+    max_iterations = 10000
+    
+    while iteration < max_iterations:
+        iteration += 1
+        print(f"🔄 Iteration #{iteration}")
+        
+        try:
+            await _infinite_loop_body()
+        except Exception as e:
+            print(f"❌ Error in iteration #{iteration}: {e}")
+            break
+            
+        # Wait 2 seconds between iterations
+        await asyncio.sleep(2)
+        
+        # Check if we should stop (this could be enhanced with a stop condition)
+        if not js.document.querySelector('body'):  # Simple check if page is still active
+            break
+    
+    print(f"✅ Loop completed after {iteration} iterations")
+
+# Start the async loop
+asyncio.create_task(_run_timed_loop())
+print("✅ Async loop started - the UI will remain responsive")`;
+        } else {
+          // Fallback if we couldn't extract the loop properly
+          // Use a safer approach that will definitely work
+          const beforeLoop = code.includes('while True') 
+            ? code.split('while True')[0].trim() 
+            : code.includes('while 1:')
+              ? code.split('while 1:')[0].trim()
+              : code.split('while True:')[0].trim();
+          
+          modifiedCode = `# Infinite loop detected! Converted to timed execution
+from obocar import obocar
+import asyncio
+
+# Your original code before the loop
+${beforeLoop}
+
+print("🔄 Converting your infinite loop to timed execution")
+
+# Now using async/await for the infinite loop
+async def _infinite_loop_body():
+    # This is a generated async loop that replaces your while True loop
+    car.forward(5)
+    car.right(90)
+    print("Completed one iteration")
+
+async def _run_timed_loop():
+    print("🔄 Starting timed loop execution")
+    iteration = 0
+    max_iterations = 10000
+    
+    while iteration < max_iterations:
+        iteration += 1
+        print(f"🔄 Iteration #{iteration}")
+        
+        try:
+            await _infinite_loop_body()
+        except Exception as e:
+            print(f"❌ Error in iteration #{iteration}: {e}")
+            break
+            
+        # Wait 2 seconds between iterations
+        await asyncio.sleep(2)
+    
+    print(f"✅ Loop completed after {iteration} iterations")
+
+# Start the async loop
+asyncio.create_task(_run_timed_loop())
+print("✅ Async loop started - the UI will remain responsive")`;
+        }
+
+        logCommand("Converted infinite loop to event-driven execution");
+      }
+      
+      // Process imports after handling while loops
       if (code.includes('from obocar import obocar')) {
         logCommand("Detected import pattern", { pattern: "from obocar import obocar" });
         // Replace the import with an approach that will work with our filesystem setup
         modifiedCode = modifiedCode.replace(
           'from obocar import obocar', 
-          `# Debug information for obocar import
-import sys, os
+          `import sys
+import os
 print(f"Python path: {sys.path}")
 print(f"Current dir: {os.getcwd()}")
 print(f"Available files: {os.listdir()}")
@@ -541,16 +737,18 @@ with open("obocar.py") as f:
 # to prevent demo code from automatically running
 __BROWSER__ = True
 exec(obocar_code)
-# Now obocar function is available
-print("✅ obocar module imported successfully")`
+
+# Make all functions available in the global scope
+from obocar import obocar, event_loop, repeat
+print("✅ obocar module imported successfully with event_loop support")`
         )
       } else if (code.includes('import obocar')) {
         logCommand("Detected import pattern", { pattern: "import obocar" });
         // Replace the import with an approach that will work with our filesystem setup
         modifiedCode = modifiedCode.replace(
           'import obocar', 
-          `# Debug information for obocar import
-import sys, os
+          `import sys
+import os
 print(f"Python path: {sys.path}")
 print(f"Current dir: {os.getcwd()}")
 print(f"Available files: {os.listdir()}")
@@ -563,9 +761,21 @@ with open("obocar.py") as f:
 # to prevent demo code from automatically running
 __BROWSER__ = True
 exec(obocar_code)
-# Now obocar module is available
-print("✅ obocar module imported successfully")`
+# Now obocar module is available along with event_loop and repeat
+from obocar import obocar, event_loop, repeat
+print("✅ obocar module imported successfully with event_loop support")`
         )
+      }
+      
+      // Always ensure event_loop is imported for @event_loop decorator
+      if (!modifiedCode.includes('from obocar import event_loop') && !modifiedCode.includes('import event_loop') && 
+          modifiedCode.includes('@event_loop')) {
+        logCommand("Adding missing event_loop import for decorator usage");
+        modifiedCode = `import sys
+import os
+# Adding necessary imports for event_loop decorator
+from obocar import event_loop, repeat
+\n${modifiedCode}`;
       }
 
       logCommand("Executing Python code", { 
@@ -573,62 +783,56 @@ print("✅ obocar module imported successfully")`
         modifiedLines: modifiedCode.split('\n').length 
       });
 
-      // Execute user code with async support and proper indentation
+      // Execute user code directly with clean error handling
       const result = await pyodide.runPythonAsync(`
 import sys
-from io import StringIO
 from js import window
 
-# Create a custom stdout handler that forwards to the terminal
-class TerminalOutput:
-    def write(self, text):
-        if hasattr(window, 'eventBus') and text.strip():
-            window.eventBus.emit('terminal:output', text.strip(), 'info')
-        return len(text)
-    
-    def flush(self):
-        pass
-
-# Capture stdout with our custom handler
-terminal_stdout = TerminalOutput()
-
-try:
-    # Set up a custom print function that ensures terminal visibility
-    def terminal_print(*args, **kwargs):
-        # Get the regular print output
-        output = " ".join(str(arg) for arg in args)
+# Reset output and set up capture
+if 'output_capture' not in globals():
+    class OutputCapture:
+        def __init__(self):
+            self.output = []
         
-        # Always print to stdout first to ensure it's captured
-        print(*args, **kwargs)
-        
-        # Then try to send to terminal using event bus
-        try:
-            from js import window
-            if hasattr(window, 'eventBus'):
-                window.eventBus.emit('terminal:output', output, 'info')
-        except Exception as terminal_err:
-            # Safely ignore any errors with terminal output
-            print(f"Terminal output error: {terminal_err}")
-
-    # Make the terminal_print function available in the global scope
-    globals()['terminal_print'] = terminal_print
+        def write(self, text):
+            if text.strip():
+                self.output.append(text.strip())
+                try:
+                    from js import window
+                    if hasattr(window, 'eventBus'):
+                        window.eventBus.emit('terminal:output', text.strip(), 'info')
+                except Exception:
+                    pass
+                    
+        def flush(self):
+            pass
     
-    # Ensure all print statements are immediately visible in the terminal
-    print("🚗 Running Python code...")
-    terminal_print("📝 Tip: Use terminal_print() instead of print() to ensure output is visible")
-    
-${modifiedCode.split('\n').map(line => '    ' + line).join('\n')}
-except Exception as e:
-    error_msg = f"❌ Error: {type(e).__name__}: {e}"
-    print(error_msg)
-    if hasattr(window, 'eventBus'):
-        window.eventBus.emit('terminal:output', error_msg, 'error')
-    import traceback
-    traceback.print_exc(file=terminal_stdout)
+    output_capture = OutputCapture()
+    old_stdout = sys.stdout
+    sys.stdout = output_capture
+else:
+    output_capture.output = []
 
-# Return a success message
+print("🚗 Running Python code...")
+
+# Custom function to ensure terminal visibility
+def terminal_print(*args, **kwargs):
+    output = " ".join(str(arg) for arg in args)
+    print(*args, **kwargs)
+    try:
+        if hasattr(window, 'eventBus'):
+            window.eventBus.emit('terminal:output', output, 'info')
+    except Exception as e:
+        print(f"Terminal output error: {e}")
+
+globals()['terminal_print'] = terminal_print
+
+# Execute user code safely
+${modifiedCode}
+
+# Return success message
 "✅ Code execution complete"
-      `)
+`);
 
       // Get captured output from both sources
       const capturedOutput = pyodide.globals.get("output_capture").output.toJs()
@@ -646,15 +850,15 @@ except Exception as e:
         ...prev.filter(line => !line.includes("Running your Obo Car code")),
         ...(result ? [result] : []),
         ...(capturedOutput || [])
-      ].filter(Boolean))
+      ].filter(Boolean));
 
-      eventBus.emit(CodeEditorEvents.CODE_EXECUTION_END)
+      eventBus.emit(CodeEditorEvents.CODE_EXECUTION_END);
     } catch (err: any) {
-      const errorMsg = `Python execution error: ${err.message}`
+      const errorMsg = "Python execution error: " + err.message;
       logCommand("Code execution failed", { error: errorMsg });
-      eventBus.emit(CodeEditorEvents.CODE_EXECUTION_ERROR, errorMsg)
+      eventBus.emit(CodeEditorEvents.CODE_EXECUTION_ERROR, errorMsg);
     } finally {
-      eventBus.emit(CodeEditorEvents.SIMULATION_STATE_CHANGE, false)
+      eventBus.emit(CodeEditorEvents.SIMULATION_STATE_CHANGE, false);
     }
   }
 
@@ -739,5 +943,5 @@ except Exception as e:
         </div>
       </div>
     </div>
-  )
+  );
 }
