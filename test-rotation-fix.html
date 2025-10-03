@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rotation Fix Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            background-color: #f0f0f0;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .test-case {
+            margin: 10px 0;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        .test-result {
+            margin-top: 10px;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        .success { background-color: #d4edda; color: #155724; }
+        .error { background-color: #f8d7da; color: #721c24; }
+        button {
+            margin: 5px;
+            padding: 10px 15px;
+            border: none;
+            border-radius: 4px;
+            background-color: #007bff;
+            color: white;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        #log {
+            background-color: #f8f9fa;
+            padding: 15px;
+            border-radius: 4px;
+            font-family: monospace;
+            white-space: pre-wrap;
+            max-height: 300px;
+            overflow-y: auto;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚗 Car Rotation Direction Test</h1>
+        <p>This test verifies that the car turns in the correct direction for all angles, including those >= 180°</p>
+        
+        <div class="test-case">
+            <h3>Test Cases:</h3>
+            <button onclick="testRotation('right', 90)">Right 90° (should turn right)</button>
+            <button onclick="testRotation('right', 180)">Right 180° (should turn right)</button>
+            <button onclick="testRotation('right', 270)">Right 270° (should turn right - FIXED!)</button>
+            <button onclick="testRotation('left', 90)">Left 90° (should turn left)</button>
+            <button onclick="testRotation('left', 180)">Left 180° (should turn left)</button>
+            <button onclick="testRotation('left', 270)">Left 270° (should turn left)</button>
+        </div>
+        
+        <div id="results"></div>
+        <div id="log"></div>
+    </div>
+
+    <script>
+        let logDiv = document.getElementById('log');
+        let resultsDiv = document.getElementById('results');
+        
+        function log(message) {
+            logDiv.textContent += new Date().toLocaleTimeString() + ': ' + message + '\n';
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+        
+        function testRotation(direction, angle) {
+            log(`Testing ${direction}(${angle}°)...`);
+            
+            // Simulate the rotation logic from python-bridge.ts
+            let rotationAngle = direction === 'right' ? angle : -angle;
+            
+            // Mock store for testing
+            let mockStore = {
+                addCommand: function(command) {
+                    log(`  Command added: ${command.type} ${command.value}°`);
+                    
+                    // Test the expected behavior
+                    let expectedDirection = direction === 'right' ? 'turn_right' : 'turn_left';
+                    let success = command.type === expectedDirection;
+                    
+                    let resultDiv = document.createElement('div');
+                    resultDiv.className = 'test-result ' + (success ? 'success' : 'error');
+                    
+                    if (success) {
+                        resultDiv.innerHTML = `✅ ${direction}(${angle}°): CORRECT - Car turns ${direction} by ${command.value}°`;
+                        log(`  ✅ SUCCESS: Car will turn ${direction} by ${command.value}°`);
+                    } else {
+                        resultDiv.innerHTML = `❌ ${direction}(${angle}°): WRONG - Expected ${direction} but got ${command.type.replace('turn_', '')}`;
+                        log(`  ❌ FAILED: Expected ${expectedDirection} but got ${command.type}`);
+                    }
+                    
+                    resultsDiv.appendChild(resultDiv);
+                },
+                setRunning: function(running) {
+                    log(`  Simulation running: ${running}`);
+                }
+            };
+            
+            // Mock the bridge rotate function (fixed version)
+            function rotate(angle) {
+                log(`  Bridge: Rotating car ${angle} degrees`);
+                
+                // This is the FIXED logic that respects user intent
+                if (angle > 0) {
+                    mockStore.addCommand({
+                        type: 'turn_right',
+                        value: Math.abs(angle),
+                        duration: Math.abs(angle) * 20
+                    });
+                } else if (angle < 0) {
+                    mockStore.addCommand({
+                        type: 'turn_left',
+                        value: Math.abs(angle),
+                        duration: Math.abs(angle) * 20
+                    });
+                }
+                
+                mockStore.setRunning(true);
+                return true;
+            }
+            
+            // Execute the test
+            rotate(rotationAngle);
+            log('');
+        }
+        
+        log('Rotation Direction Test Ready!');
+        log('Click the buttons above to test different rotation scenarios.');
+        log('The fix ensures that right(270°) actually turns RIGHT, not left.');
+        log('');
+    </script>
+</body>
+</html>

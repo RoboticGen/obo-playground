@@ -16,7 +16,7 @@ import { PyodideCarController } from '@/lib/pyodide-car-controller';
 import { useSimulationStore } from '@/lib/car-control-system';
 import { Canvas } from "@react-three/fiber";
 import { OrbitControls, Environment, Grid, Html } from "@react-three/drei";
-import { Physics } from "@react-three/rapier";
+import { Physics, RigidBody } from "@react-three/rapier";
 import { OboCarScene } from '@/components/obo-car-scene';
 
 // Define TypeScript interface for PyodideCarController
@@ -40,11 +40,13 @@ interface OboCarAPIBridge {
   updateState: (x: number, y: number, angle: number) => boolean;
   reset: () => boolean;
   rotate: (angle: number) => boolean;
+  moveDirect?: (x: number, z: number) => boolean;
 }
 
 export function OboCarSimulator() {
   const [controller, setController] = useState<ICarController | null>(null);
   const [isInitialized, setIsInitialized] = useState(false);
+  const carRef = React.useRef<any>(null); // Reference to the 3D car object
   const [carStatus, setCarStatus] = useState<any>(null);
   const [sensorData, setSensorData] = useState<Record<string, number>>({});
   const [customCode, setCustomCode] = useState('');
@@ -52,26 +54,57 @@ export function OboCarSimulator() {
   const [loading, setLoading] = useState(false);
   const [showDebug, setShowDebug] = useState(false);
 
+  // Auto-stabilization effect to prevent jumping
+  useEffect(() => {
+    const stabilizeCar = () => {
+      if (carRef.current) {
+        // Gradually reduce any residual velocity
+        const body = carRef.current;
+        const linVel = body.linvel();
+        const angVel = body.angvel();
+        
+        // If velocities are very small, just stop completely
+        if (Math.abs(linVel.x) < 0.01 && Math.abs(linVel.z) < 0.01 && Math.abs(linVel.y) < 0.1) {
+          body.setLinvel({ x: 0, y: 0, z: 0 });
+        }
+        
+        if (Math.abs(angVel.y) < 0.01) {
+          body.setAngvel({ x: 0, y: 0, z: 0 });
+        }
+      }
+    };
+
+    const stabilizationInterval = setInterval(stabilizeCar, 50); // More frequent stabilization
+    return () => clearInterval(stabilizationInterval);
+  }, []);
+
   // Make sure simulation is always running and car is properly positioned
   useEffect(() => {
-    // Reset the simulation to ensure proper initial state
-    useSimulationStore.getState().resetSimulation();
+    // Get the current state
+    const simState = useSimulationStore.getState();
     
-    // Start the simulation
-    useSimulationStore.getState().setIsRunning(true);
+    // Only initialize the simulation on first load
+    if (!simState.isRunning) {
+      console.log('Initializing simulation for the first time');
+      
+      // DON'T reset the simulation - only set the running state
+      // This prevents losing position when the component re-renders
+      
+      // Start the simulation
+      useSimulationStore.getState().setIsRunning(true);
+      
+      // Set initial car position only on first load
+      console.log('Setting initial car position on first load');
+      useSimulationStore.getState().updateCarPosition([0, 1, 0]);
+      useSimulationStore.getState().updateCarRotation(0);
+    }
     
-    // Reset car position to match Python's expectations (0,0,0)
-    useSimulationStore.getState().updateCarPosition([0, 1, 0]);
-    useSimulationStore.getState().updateCarRotation(0);
-    
-    // ADVANCED DEBUG: Setup enhanced debugging
-    // This will create a timer that logs the state every second
-    // to help diagnose synchronization issues
+    // Setup enhanced debugging
     const debugInterval = setInterval(() => {
       const state = useSimulationStore.getState();
       console.log('[v0] 🔍 DEBUG - Current 3D State:', {
-        position: state.car.position,
-        rotation: state.car.rotation,
+        position: state.car?.position || 'Not available',
+        rotation: state.car?.rotation || 'Not available',
         isRunning: state.isRunning,
         time: new Date().toISOString()
       });
@@ -107,9 +140,8 @@ export function OboCarSimulator() {
         
         // Create global bridge to simulation store for Python code to access
         if (typeof window !== 'undefined') {
-          // Make oboCarAPI available globally for Python
-          // Define our bridge interface
-          const bridge: OboCarAPIBridge & { rotate?: (angle: number) => boolean } = {
+          // Define our bridge interface with stabilized movement
+          const bridge: OboCarAPIBridge = {
             move: (distance: number) => {
               console.log(`[v1] 🚗 JS Bridge: Moving car forward ${distance} units`);
               
@@ -117,14 +149,10 @@ export function OboCarSimulator() {
               const { car } = useSimulationStore.getState();
               const currentRotation = car.rotation;
               
-              // CRITICAL FIX: Convert the angle to radians correctly
-              // We need to work with THREE.js convention where rotation is in radians
+              // Convert the angle to radians correctly
               const rotationRad = (currentRotation * Math.PI) / 180;
               
               // Calculate the new position using proper trigonometry
-              // In Three.js: X is left/right, Z is forward/backward
-              // When angle is 0, movement should be along Z axis
-              // When angle is 90, movement should be along X axis
               const newX = car.position[0] + distance * Math.sin(rotationRad);
               const newZ = car.position[2] - distance * Math.cos(rotationRad);
               
@@ -135,21 +163,33 @@ export function OboCarSimulator() {
                 useSimulationStore.getState().setIsRunning(true);
               }
               
-              // Update the position in the simulation store
-              // Keep Y (height) unchanged - that's the up/down axis in 3D space
+              // STABILIZED MOVEMENT: Use smaller, controlled impulses
+              const impulseStrength = Math.min(Math.abs(distance), 2) * Math.sign(distance); // Limit impulse strength
+              const impulse = {
+                x: Math.sin(rotationRad) * impulseStrength * 0.3, // Reduced force
+                y: 0, 
+                z: -Math.cos(rotationRad) * impulseStrength * 0.3
+              };
+              
+              // Apply stabilized impulse
+              if (carRef.current) {
+                // First stop any existing movement
+                carRef.current.setLinvel({ x: 0, y: 0, z: 0 });
+                carRef.current.setAngvel({ x: 0, y: 0, z: 0 });
+                
+                // Then apply controlled impulse
+                carRef.current.applyImpulse(impulse);
+              }
+              
+              // Also update store for immediate visual feedback
               useSimulationStore.getState().updateCarPosition([newX, car.position[1], newZ]);
-              console.log(`[v1] ✅ Updated car position from [${car.position[0]}, ${car.position[1]}, ${car.position[2]}] to [${newX}, ${car.position[1]}, ${newZ}]`);
+              
+              console.log(`[v1] ✅ Applied stabilized movement impulse:`, impulse);
               return true;
             },
             
             getPosition: () => {
               const { car } = useSimulationStore.getState();
-              // Map the 3D position to what Python expects
-              // In 3D, position is [x, y, z] where:
-              // - x is left/right
-              // - y is up/down 
-              // - z is forward/backward
-              // Python expects [x, z] since it's a 2D system
               console.log(`[v0] 🔍 Getting car position from 3D: [${car.position[0]}, ${car.position[1]}, ${car.position[2]}]`);
               console.log(`[v0] 🔍 Converting to Python format: [${car.position[0]}, ${car.position[2]}]`);
               
@@ -171,37 +211,33 @@ export function OboCarSimulator() {
                 useSimulationStore.getState().setIsRunning(true);
               }
               
-              // COORDINATE SYSTEM MAPPING - SIMPLIFIED APPROACH
-              // Python obocar: 2D coordinate system where (x,y) is position on a plane
-              // 3D scene: 3D coordinate system where (x,y,z) with y being up/down
-              //
-              // Map Python's (x,y) to 3D's (x,1,z) where:
-              // - Python's x maps directly to 3D's x (left/right)
-              // - Python's y maps directly to 3D's z (forward/backward)
-              // - 3D's y is fixed at 1 (height off ground)
+              // STOP ALL MOVEMENT FIRST - CRITICAL FOR STABILITY
+              if (carRef.current) {
+                carRef.current.setLinvel({ x: 0, y: 0, z: 0 });
+                carRef.current.setAngvel({ x: 0, y: 0, z: 0 });
+              }
               
-              // First check if the car exists in the simulation
-              const simulationState = useSimulationStore.getState();
+              // Update position and rotation in store
+              useSimulationStore.getState().updateCarPosition([x, 1, y]);
+              useSimulationStore.getState().updateCarRotation(angle);
               
-              // CRITICAL FIX: Direct mapping without complex transformations
-              // Just use the angle directly as we did in the rotate function
-              // When Python sends angle=90, we want rotation=90
+              // TELEPORT the car to exact position (no physics movement)
+              if (carRef.current) {
+                carRef.current.setTranslation({ x: x, y: 1, z: y });
+                carRef.current.setRotation({ 
+                  x: 0, 
+                  y: -angle * (Math.PI / 180), // Convert to radians with proper sign
+                  z: 0, 
+                  w: 1 
+                });
+              }
               
-              // Debug output to help diagnose coordinate issues
-              console.log(`[v2] 🔍 Python state update: pos=[${x}, ${y}], angle=${angle}°`);
-              console.log(`[v2] 🔍 Direct mapping to 3D: pos=[${x}, 1, ${y}], rotation=${angle}°`);
+              console.log(`[v2] ✅ Car state stabilized and teleported to exact position`);
               
-              // Update position and rotation in the simulation store directly
-              simulationState.updateCarPosition([x, 1, y]);
-              simulationState.updateCarRotation(angle);
-              
-              // Add enhanced debug visualization to verify update
-              console.log(`[v2] ✅ Car state updated: pos=[${x}, 1, ${y}], rotation=${angle}°`);
-              
-              // Log the actual state from the store to verify
+              // Verify the update
               setTimeout(() => {
                 const currentState = useSimulationStore.getState().car;
-                console.log(`[v2] � Verified car state: pos=[${currentState.position[0]}, ${currentState.position[1]}, ${currentState.position[2]}], rotation=${currentState.rotation}°`);
+                console.log(`[v2] ✅ Verified car state: pos=[${currentState.position[0]}, ${currentState.position[1]}, ${currentState.position[2]}], rotation=${currentState.rotation}°`);
               }, 10);
               
               return true;
@@ -209,8 +245,18 @@ export function OboCarSimulator() {
             
             reset: () => {
               console.log(`[v0] 🔄 JS Bridge: Resetting car position`);
+              
+              // Stop all movement first
+              if (carRef.current) {
+                carRef.current.setLinvel({ x: 0, y: 0, z: 0 });
+                carRef.current.setAngvel({ x: 0, y: 0, z: 0 });
+                carRef.current.setTranslation({ x: 0, y: 1, z: 0 });
+                carRef.current.setRotation({ x: 0, y: 0, z: 0, w: 1 });
+              }
+              
               // Reset the simulation state
               useSimulationStore.getState().resetSimulation();
+              
               // Immediately restart it to make sure updates are visible
               setTimeout(() => {
                 useSimulationStore.getState().setIsRunning(true);
@@ -219,25 +265,21 @@ export function OboCarSimulator() {
               return true;
             },
             
-            // Add a direct rotation method
+            // Enhanced rotation with stabilization
             rotate: (angle: number) => {
-              // When Python calls "right(90)" we need to handle it correctly
-              // For "right" rotation, we need to rotate clockwise looking from top
-              
               const { car } = useSimulationStore.getState();
               const currentRotation = car.rotation;
               
-              // CRITICAL FIX: Apply rotation directly
-              // In Three.js, positive rotation is counter-clockwise around Y axis
-              // For simplicity, we'll just use the angle as-is
-              // When we call right(90), we want to rotate 90 degrees clockwise
-              // We need to make the angle negative to match Three.js conventions
+              // Apply rotation directly
               const newRotation = (currentRotation - angle) % 360;
-              
-              // Normalize the angle to always be between 0-359
               const normalizedRotation = newRotation < 0 ? newRotation + 360 : newRotation;
               
               console.log(`[v1] 🔄 Rotating car from ${currentRotation}° to ${normalizedRotation}°`);
+              
+              // Stop any rotational movement first
+              if (carRef.current) {
+                carRef.current.setAngvel({ x: 0, y: 0, z: 0 });
+              }
               
               // Ensure the simulation is running
               if (!useSimulationStore.getState().isRunning) {
@@ -246,8 +288,47 @@ export function OboCarSimulator() {
               
               // Update car rotation - simple and direct
               useSimulationStore.getState().updateCarRotation(normalizedRotation);
+              
+              // Also update physics body rotation
+              if (carRef.current) {
+                carRef.current.setRotation({ 
+                  x: 0, 
+                  y: -normalizedRotation * (Math.PI / 180), 
+                  z: 0, 
+                  w: 1 
+                });
+              }
+              
               return true;
             },
+
+            // Direct teleportation movement for precise control
+            moveDirect: (x: number, z: number) => {
+              console.log(`[v3] 🎯 Direct teleportation to [${x}, ${z}]`);
+              
+              // Ensure simulation is running
+              if (!useSimulationStore.getState().isRunning) {
+                useSimulationStore.getState().setIsRunning(true);
+              }
+              
+              // Stop all movement first
+              if (carRef.current) {
+                carRef.current.setLinvel({ x: 0, y: 0, z: 0 });
+                carRef.current.setAngvel({ x: 0, y: 0, z: 0 });
+                
+                // Teleport to exact position
+                carRef.current.setTranslation({ 
+                  x: x, 
+                  y: 1, // Keep consistent height
+                  z: z 
+                });
+              }
+              
+              // Also update the store
+              useSimulationStore.getState().updateCarPosition([x, 1, z]);
+              console.log(`[v3] ✅ Car teleported to [${x}, 1, ${z}]`);
+              return true;
+            }
           };
           
           // Assign to window.oboCarAPI for Python to access
@@ -255,7 +336,7 @@ export function OboCarSimulator() {
           
           // Set the simulation to running so that 3D car updates are applied
           useSimulationStore.getState().setIsRunning(true);
-          console.log(`[v0] ✅ Created oboCarAPI bridge for Python and started simulation`);
+          console.log(`[v0] ✅ Created stabilized oboCarAPI bridge for Python`);
         }
         
         await updateCarStatus(carController);
@@ -276,12 +357,27 @@ export function OboCarSimulator() {
     // Force the simulation to update
     useSimulationStore.getState().setIsRunning(true);
     
+    // Stop any car movement
+    if (carRef.current) {
+      carRef.current.setLinvel({ x: 0, y: 0, z: 0 });
+      carRef.current.setAngvel({ x: 0, y: 0, z: 0 });
+    }
+    
     // Log the current state
     const currentState = useSimulationStore.getState().car;
     console.log(`[v2] 🔍 DEBUG - Refreshed car state: pos=[${currentState.position[0]}, ${currentState.position[1]}, ${currentState.position[2]}], rotation=${currentState.rotation}°`);
     
     // Update car status from controller
     updateCarStatus();
+  };
+
+  // Function to immediately stop all car movement
+  const stopCarMovement = () => {
+    if (carRef.current) {
+      carRef.current.setLinvel({ x: 0, y: 0, z: 0 });
+      carRef.current.setAngvel({ x: 0, y: 0, z: 0 });
+      console.log('🛑 Car movement immediately stopped');
+    }
   };
   
   const updateCarStatus = async (ctrl = controller) => {
@@ -309,6 +405,9 @@ export function OboCarSimulator() {
     
     setLoading(true);
     try {
+      // Stop movement before any new action
+      stopCarMovement();
+      
       switch (action) {
         case 'forward':
           await controller.moveForward(value);
@@ -343,6 +442,9 @@ export function OboCarSimulator() {
     setOutput('Running basic simulation...\n');
     
     try {
+      // Stop any existing movement before simulation
+      stopCarMovement();
+      
       await controller.runBasicSimulation();
       await updateCarStatus();
       setOutput(prev => prev + 'Basic simulation completed!\n');
@@ -362,6 +464,9 @@ export function OboCarSimulator() {
     setOutput('Executing custom code...\n');
     
     try {
+      // Stop any existing movement before code execution
+      stopCarMovement();
+      
       await controller.executeCode(customCode);
       await updateCarStatus();
       setOutput(prev => prev + 'Custom code executed successfully!\n');
@@ -380,11 +485,11 @@ from obocar import obocar
 # Create a car instance
 car = obocar()
 
-# This is a template - code won't run automatically
-# You need to press "Execute Code" button to run your code
-
-
+# Example of stable movement
+car.forward(2)    # Move forward 2 units
 car.wait(0.5)     # Wait for 0.5 seconds
+car.right(90)     # Turn right 90 degrees
+car.forward(1)    # Move forward 1 unit
 
 # Get sensor readings:
 # front_distance = car.sensor('front')
@@ -443,8 +548,8 @@ print("✅ Ready to write your code and press 'Execute Code'")`;
                     <ambientLight intensity={0.4} />
                     <directionalLight position={[10, 10, 5]} intensity={1} castShadow shadow-mapSize={[2048, 2048]} />
 
-                    <Physics debug={false}>
-                      <OboCarScene />
+                    <Physics gravity={[0, -9.81, 0]}>
+                      <OboCarScene ref={carRef} />
                       <Grid
                         args={[20, 20]}
                         position={[0, -0.01, 0]}
@@ -588,6 +693,13 @@ print("✅ Ready to write your code and press 'Execute Code'")`;
                 >
                   Run Basic Simulation
                 </Button>
+                <Button 
+                  onClick={stopCarMovement}
+                  variant="outline"
+                  size="lg"
+                >
+                  Stop Movement
+                </Button>
               </div>
             </CardContent>
           </Card>
@@ -682,13 +794,22 @@ print("✅ Ready to write your code and press 'Execute Code'")`;
                       </div>
                     </div>
                   </div>
-                  <Button 
-                    onClick={refreshDebugState}
-                    size="sm"
-                    variant="outline"
-                  >
-                    Refresh
-                  </Button>
+                  <div className="flex gap-2">
+                    <Button 
+                      onClick={refreshDebugState}
+                      size="sm"
+                      variant="outline"
+                    >
+                      Refresh
+                    </Button>
+                    <Button 
+                      onClick={stopCarMovement}
+                      size="sm"
+                      variant="outline"
+                    >
+                      Stop Movement
+                    </Button>
+                  </div>
                 </div>
               </CardContent>
             )}

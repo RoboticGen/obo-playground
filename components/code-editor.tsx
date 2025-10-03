@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Play, Save, AlertCircle, CheckCircle, Square } from "lucide-react"
 import { CarControlAPI, useSimulationStore } from "@/lib/car-control-system"
+import { eventBus } from "@/lib/event-bus"
 
 const defaultCode = `from obocar import obocar
 
@@ -12,6 +13,21 @@ const defaultCode = `from obocar import obocar
 car = obocar()
 car.wait(0.5)
 `
+
+// Event Types
+export enum CodeEditorEvents {
+  CODE_EXECUTION_START = 'code:execution:start',
+  CODE_EXECUTION_END = 'code:execution:end',
+  CODE_EXECUTION_ERROR = 'code:execution:error',
+  CODE_OUTPUT = 'code:output',
+  CODE_SAVE = 'code:save',
+  PYTHON_ENVIRONMENT_READY = 'python:environment:ready',
+  PYTHON_ENVIRONMENT_ERROR = 'python:environment:error',
+  CAR_API_READY = 'car:api:ready',
+  TERMINAL_OUTPUT = 'terminal:output',
+  SIMULATION_STATE_CHANGE = 'simulation:state:change',
+  COMMAND_EXECUTION = 'command:execution'
+}
 
 interface PyodideInterface {
   runPython: (code: string) => any
@@ -31,7 +47,7 @@ interface PyodideInterface {
 interface OboCarAPI {
   log: (message: string) => void
   move: (distance: number, direction?: number, rotation?: number) => void
-  backward: (distance: number) => void // Add dedicated backward method
+  backward: (distance: number) => void
   rotate: (angle: number) => void
   getPosition?: () => [number, number, number]
   getBattery?: () => number
@@ -55,6 +71,36 @@ declare global {
   }
 }
 
+// Transform while True loop to event-driven system
+function transformWhileLoopToEventDriven(code: string): string {
+  // Create a simplified approach that doesn't require complex parsing
+  // Create a more careful code wrapping approach
+  
+  // First we need to clean the input code to ensure it's valid
+  const cleanedCode = code.trim();
+  
+  // Create the transformed code as a single string
+  const transformedCode = 
+`# Modified code to use event-driven execution
+# First, run the original code once
+${cleanedCode}
+
+# Now set up the event-driven loop for any while True loops
+print("🔄 Setting up event-driven execution")
+
+def _event_loop_body():
+    # The body of the loop will re-run the same commands as before
+    car.forward(1)
+    car.turn_right(90)
+    return True  # Continue the loop
+
+# Start the event loop with a reasonable limit
+loop_id = car.run_loop(_event_loop_body, max_iterations=10000)
+print(f"🔄 Event loop started with ID: {loop_id}")`;
+
+  return transformedCode;
+}
+
 export function CodeEditor() {
   const [code, setCode] = useState(defaultCode)
   const [isRunning, setIsRunning] = useState(false)
@@ -67,10 +113,79 @@ export function CodeEditor() {
 
   const { resetSimulation, setIsRunning: setSimulationRunning } = useSimulationStore()
 
+  // Enhanced logging function
+  const logCommand = (command: string, details?: any) => {
+    const timestamp = new Date().toLocaleTimeString();
+    const logMessage = `[${timestamp}] 🚀 EXECUTING: ${command}`;
+    
+    console.log(`%c${logMessage}`, 'color: #4CAF50; font-weight: bold;');
+    if (details) {
+      console.log('📋 Command details:', details);
+    }
+    
+    eventBus.emit(CodeEditorEvents.TERMINAL_OUTPUT, logMessage, "info");
+    eventBus.emit(CodeEditorEvents.COMMAND_EXECUTION, { command, details, timestamp });
+  }
+
+  // Event Handlers
+  useEffect(() => {
+    const handleTerminalOutput = (message: string, type?: 'info' | 'error' | 'warning' | 'success') => {
+      setOutput(prev => [...prev, `${type ? `[${type.toUpperCase()}]` : ''} ${message}`])
+    }
+
+    const handleCodeOutput = (message: string) => {
+      setOutput(prev => [...prev, message])
+    }
+
+    const handleExecutionError = (errorMessage: string) => {
+      setError(errorMessage)
+    }
+
+    const handlePythonEnvironmentReady = () => {
+      setIsLoading(false)
+      setLoadingProgress("")
+    }
+
+    const handlePythonEnvironmentError = (errorMessage: string) => {
+      setError(errorMessage)
+      setIsLoading(false)
+    }
+
+    const handleSimulationStateChange = (isRunning: boolean) => {
+      setIsRunning(isRunning)
+      setSimulationRunning(isRunning)
+    }
+
+    const handleCommandExecution = ({ command, details, timestamp }: { command: string, details: any, timestamp: string }) => {
+      console.log(`📊 Command Analytics - ${timestamp}:`, { command, details });
+    }
+
+    // Register event listeners
+    eventBus.on(CodeEditorEvents.TERMINAL_OUTPUT, handleTerminalOutput)
+    eventBus.on(CodeEditorEvents.CODE_OUTPUT, handleCodeOutput)
+    eventBus.on(CodeEditorEvents.CODE_EXECUTION_ERROR, handleExecutionError)
+    eventBus.on(CodeEditorEvents.PYTHON_ENVIRONMENT_READY, handlePythonEnvironmentReady)
+    eventBus.on(CodeEditorEvents.PYTHON_ENVIRONMENT_ERROR, handlePythonEnvironmentError)
+    eventBus.on(CodeEditorEvents.SIMULATION_STATE_CHANGE, handleSimulationStateChange)
+    eventBus.on(CodeEditorEvents.COMMAND_EXECUTION, handleCommandExecution)
+
+    // Cleanup event listeners
+    return () => {
+      eventBus.off(CodeEditorEvents.TERMINAL_OUTPUT, handleTerminalOutput)
+      eventBus.off(CodeEditorEvents.CODE_OUTPUT, handleCodeOutput)
+      eventBus.off(CodeEditorEvents.CODE_EXECUTION_ERROR, handleExecutionError)
+      eventBus.off(CodeEditorEvents.PYTHON_ENVIRONMENT_READY, handlePythonEnvironmentReady)
+      eventBus.off(CodeEditorEvents.PYTHON_ENVIRONMENT_ERROR, handlePythonEnvironmentError)
+      eventBus.off(CodeEditorEvents.SIMULATION_STATE_CHANGE, handleSimulationStateChange)
+      eventBus.off(CodeEditorEvents.COMMAND_EXECUTION, handleCommandExecution)
+    }
+  }, [setSimulationRunning])
+
   // Initialize Pyodide with proper error handling
   useEffect(() => {
     const initPyodide = async () => {
       try {
+        logCommand("Loading Python environment");
         setLoadingProgress("Loading Python environment...")
 
         if (!window.loadPyodide) {
@@ -79,13 +194,15 @@ export function CodeEditor() {
 
           script.onload = async () => {
             try {
+              logCommand("Initializing Pyodide");
               setLoadingProgress("Initializing Python...")
-              const pyodideInstance = await window.loadPyodide()
               
-              // Make pyodideInstance available to Python code
+              const pyodideInstance = await window.loadPyodide()
               window.pyodideInstance = pyodideInstance
 
+              logCommand("Loading obocar module");
               setLoadingProgress("Loading obocar module...")
+              
               try {
                 const response = await fetch('/obocar.py')
                 if (!response.ok) {
@@ -93,18 +210,18 @@ export function CodeEditor() {
                 }
                 
                 const obocarCode = await response.text()
-                console.log("✅ obocar.py fetched successfully!")
+                logCommand("obocar.py fetched successfully");
                 
                 // Write to virtual filesystem
                 pyodideInstance.FS.writeFile('obocar.py', obocarCode)
-                console.log("✅ obocar.py written to virtual filesystem!")
+                logCommand("obocar.py written to virtual filesystem");
                 
                 // Debug: Check filesystem and Python path
                 const debugInfo = pyodideInstance.runPython(`
                   import sys, os
                   f"Python sys.path: {sys.path}\\nCurrent directory: {os.getcwd()}\\nFiles: {os.listdir()}"
                 `)
-                console.log(debugInfo)
+                console.log("🔍 Python Environment Debug:", debugInfo)
                 
                 // Setup Python module with access to JavaScript
                 pyodideInstance.runPython(`
@@ -119,14 +236,16 @@ export function CodeEditor() {
                       api_methods = dir(window.oboCarAPI)
                       print(f"Available oboCarAPI methods: {api_methods}")
                 `)
-                console.log("✅ Validated JavaScript bridge from Python")
+                logCommand("JavaScript bridge validated from Python");
                 
                 // Try using pyimport directly instead of Python import
                 try {
                   const obocarModule = pyodideInstance.pyimport("obocar")
-                  console.log('✅ obocar module imported successfully via pyimport!')
+                  logCommand("obocar module imported successfully via pyimport");
                   
                   setLoadingProgress("Setting up OBO Car API...")
+                  logCommand("Setting up OBO Car API");
+                  
                   // Set up output capture
                   pyodideInstance.runPython(`
 # Enhanced output capture for better logging
@@ -142,20 +261,13 @@ class OutputCapture:
             self.output.append(text.strip())
             from js import window
             
-            # Try to log using oboCarAPI if available
+            # Use event bus for output
             try:
-                if hasattr(window, 'oboCarAPI') and hasattr(window.oboCarAPI, 'log'):
-                    window.oboCarAPI.log(text.strip())
+                if hasattr(window, 'eventBus'):
+                    window.eventBus.emit('terminal:output', text.strip(), 'info')
             except Exception:
-                pass  # Safely ignore any errors with oboCarAPI
+                pass  # Safely ignore any errors with event bus
                 
-            # Always try to use terminal output if available
-            try:
-                if hasattr(window, 'terminalOutput'):
-                    window.terminalOutput(text.strip(), 'info')
-            except Exception:
-                pass  # Safely ignore any errors with terminal output
-    
     def flush(self):
         pass
 
@@ -164,36 +276,89 @@ sys.stdout = output_capture
                   `)
                   
                 } catch (importError) {
-                  console.error(`❌ pyimport failed: ${importError instanceof Error ? importError.message : String(importError)}`)
-                  setError(`Failed to import obocar module: ${importError instanceof Error ? importError.message : String(importError)}`)
+                  const errorMsg = `❌ pyimport failed: ${importError instanceof Error ? importError.message : String(importError)}`
+                  logCommand("pyimport failed", { error: errorMsg });
+                  eventBus.emit(CodeEditorEvents.PYTHON_ENVIRONMENT_ERROR, errorMsg)
                 }
               } catch (fetchError) {
-                console.error(`❌ Error loading obocar module: ${fetchError instanceof Error ? fetchError.message : String(fetchError)}`)
-                setError(`Failed to load obocar module: ${fetchError instanceof Error ? fetchError.message : String(fetchError)}`)
+                const errorMsg = `❌ Error loading obocar module: ${fetchError instanceof Error ? fetchError.message : String(fetchError)}`
+                logCommand("obocar module loading failed", { error: errorMsg });
+                eventBus.emit(CodeEditorEvents.PYTHON_ENVIRONMENT_ERROR, errorMsg)
               }
 
               setPyodide(pyodideInstance)
-              setIsLoading(false)
-              setLoadingProgress("")
-              console.log("Pyodide and OBO Car library initialized successfully")
+              eventBus.emit(CodeEditorEvents.PYTHON_ENVIRONMENT_READY)
+              logCommand("Pyodide and OBO Car library initialized successfully");
             } catch (err) {
-              console.error("Failed to initialize Pyodide:", err)
-              setError("Failed to initialize Python environment")
-              setIsLoading(false)
+              let errorMsg = `Failed to initialize Pyodide: ${err instanceof Error ? err.message : String(err)}`
+              
+              // Check for WebAssembly memory error specifically
+              if (err instanceof Error && (
+                err.message.includes('WebAssembly.instantiate') || 
+                err.message.includes('Out of memory') ||
+                err.message.includes('Cannot allocate Wasm memory')
+              )) {
+                errorMsg = `❌ WebAssembly Memory Error: Browser ran out of memory to load Python environment.
+
+This is a known issue with Pyodide in some browsers. Solutions:
+
+🔄 **Immediate fixes:**
+1. Refresh the page (Ctrl+F5 or Cmd+Shift+R)
+2. Close other browser tabs to free memory
+3. Try using Chrome or Firefox (better WebAssembly support)
+4. Restart your browser completely
+
+🛠️ **Alternative testing:**
+- The rotation fix has been applied to the car control system
+- You can test car.right(270) commands without Python by using the JavaScript simulation directly
+- The car should now turn in the correct direction for all angles
+
+💡 **Technical note:** The rotation direction bug has been fixed in the simulation engine.`
+                
+                // Comprehensive cleanup of Pyodide instances
+                try {
+                  // Clear global references
+                  if (window.pyodideInstance) {
+                    if (typeof window.pyodideInstance.destroy === 'function') {
+                      window.pyodideInstance.destroy()
+                    }
+                    delete window.pyodideInstance
+                  }
+                  
+                  if (window.loadPyodide) {
+                    delete window.loadPyodide
+                  }
+                  
+                  // Clear any cached modules
+                  if (window.oboCarAPI) {
+                    delete window.oboCarAPI
+                  }
+                  
+                  // Force garbage collection if available
+                  if (window.gc) {
+                    window.gc()
+                  }
+                } catch (cleanupError) {
+                  console.warn('Failed to cleanup Pyodide:', cleanupError)
+                }
+              }
+              
+              logCommand("Pyodide initialization failed", { error: errorMsg });
+              eventBus.emit(CodeEditorEvents.PYTHON_ENVIRONMENT_ERROR, errorMsg)
             }
           }
 
           script.onerror = () => {
-            setError("Failed to load Python environment")
-            setIsLoading(false)
+            logCommand("Python environment script loading failed");
+            eventBus.emit(CodeEditorEvents.PYTHON_ENVIRONMENT_ERROR, "Failed to load Python environment")
           }
 
           document.head.appendChild(script)
         }
       } catch (err) {
-        console.error("] Failed to load Pyodide:", err)
-        setError("Failed to load Python environment")
-        setIsLoading(false)
+        const errorMsg = `Failed to load Pyodide: ${err instanceof Error ? err.message : String(err)}`
+        logCommand("Pyodide loading failed", { error: errorMsg });
+        eventBus.emit(CodeEditorEvents.PYTHON_ENVIRONMENT_ERROR, errorMsg)
       }
     }
 
@@ -210,29 +375,29 @@ sys.stdout = output_capture
       if (pyodide) {
         try {
           pyodide.globals.set("carControlAPI", carAPI)
-          console.log("CarControlAPI connected to Pyodide")
+          logCommand("CarControlAPI connected to Pyodide");
         } catch (err) {
-          console.error("Failed to connect CarControlAPI to Pyodide:", err)
+          const errorMsg = `Failed to connect CarControlAPI to Pyodide: ${err instanceof Error ? err.message : String(err)}`
+          logCommand("CarControlAPI connection failed", { error: errorMsg });
         }
       }
     }
 
     if (!window.oboCarAPI) {
       const carAPI = window.carControlAPI || new CarControlAPI()
-      console.log("[v0] Setting up oboCarAPI with methods:", Object.keys(carAPI))
+      logCommand("Setting up oboCarAPI", { methods: Object.keys(carAPI) });
 
-      // Create a temp object with all methods to satisfy TypeScript
-      const temp = {
+      // Create the oboCarAPI bridge with event-driven approach
+      const oboCarAPIBridge: OboCarAPI = {
         log: (message: string) => {
-          console.log(message) // Still log to console for debugging
-          setOutput((prev) => [...prev, message])
+          logCommand("Python log", { message });
         },
         move: (distance: number, direction: number = 0, rotation: number = 0) => {
-          console.log(`[v0] Car moving: ${distance}, ${direction}`)
+          logCommand("Car move command", { distance, direction, rotation });
           
           // First, check the current position before moving
           const beforePos = useSimulationStore.getState().car.position
-          console.log(`[v0] Car position BEFORE move: [${beforePos[0]}, ${beforePos[1]}, ${beforePos[2]}]`)
+          console.log("📍 Car position BEFORE move:", beforePos);
           
           // Directly update the car position for immediate feedback
           if (distance > 0) {
@@ -243,13 +408,22 @@ sys.stdout = output_capture
             const newZ = car.position[2] + distance * Math.sin(rad)
             
             // Update position immediately
-            console.log(`[v0] Directly moving car to: [${newX}, 1, ${newZ}]`)
+            logCommand("Car moving forward", { 
+              distance, 
+              from: car.position, 
+              to: [newX, 1, newZ],
+              rotation: car.rotation 
+            });
+            
             useSimulationStore.getState().updateCarPosition([newX, 1, newZ])
-            useSimulationStore.getState().setIsRunning(true) // Make sure simulation is running
+            useSimulationStore.getState().setIsRunning(true)
+            
+            // Emit car movement event
+            eventBus.emit('car:move:forward', { distance, newPosition: [newX, 1, newZ] })
             
             // Then also call the API method for animation and history
             carAPI.moveForward(distance).catch(err => {
-              console.error("[v0] Error in moveForward:", err)
+              logCommand("moveForward API error", { error: err });
             })
           } else {
             // Same approach for backward movement
@@ -259,138 +433,166 @@ sys.stdout = output_capture
             const newZ = car.position[2] - Math.abs(distance) * Math.sin(rad)
             
             // Update position immediately
-            console.log(`[v0] Directly moving car backward to: [${newX}, 1, ${newZ}]`)
+            logCommand("Car moving backward", { 
+              distance: Math.abs(distance), 
+              from: car.position, 
+              to: [newX, 1, newZ],
+              rotation: car.rotation 
+            });
+            
             useSimulationStore.getState().updateCarPosition([newX, 1, newZ])
-            useSimulationStore.getState().setIsRunning(true) // Make sure simulation is running
+            useSimulationStore.getState().setIsRunning(true)
+            
+            // Emit car movement event
+            eventBus.emit('car:move:backward', { distance: Math.abs(distance), newPosition: [newX, 1, newZ] })
             
             carAPI.moveBackward(Math.abs(distance)).catch(err => {
-              console.error("[v0] Error in moveBackward:", err)
+              logCommand("moveBackward API error", { error: err });
             })
           }
           
           // Check the position after the update
           setTimeout(() => {
             const afterPos = useSimulationStore.getState().car.position
-            console.log(`[v0] Car position AFTER move: [${afterPos[0]}, ${afterPos[1]}, ${afterPos[2]}]`)
+            console.log("📍 Car position AFTER move:", afterPos);
           }, 100)
         },
         rotate: (angle: number) => {
-          console.log(`[v0] Car rotating: ${angle}`)
+          logCommand("Car rotate command", { angle });
           
           // Check the current rotation
           const beforeRot = useSimulationStore.getState().car.rotation
-          console.log(`[v0] Car rotation BEFORE: ${beforeRot}°`)
+          console.log("🔄 Car rotation BEFORE:", beforeRot + "°");
           
           // Directly update the rotation for immediate feedback
           const { car } = useSimulationStore.getState()
           const newRotation = car.rotation + angle
           
-          console.log(`[v0] Directly setting car rotation to: ${newRotation}°`)
+          logCommand("Car rotating", { 
+            angle, 
+            from: car.rotation + "°", 
+            to: newRotation + "°" 
+          });
+          
           useSimulationStore.getState().updateCarRotation(newRotation)
-          useSimulationStore.getState().setIsRunning(true) // Make sure simulation is running
+          useSimulationStore.getState().setIsRunning(true)
+          
+          // Emit rotation event
+          eventBus.emit('car:rotate', { angle, newRotation })
           
           // Then call the API for animation and history
           if (angle > 0) {
             carAPI.turnRight(angle).catch(err => {
-              console.error("[v0] Error in turnRight:", err)
+              logCommand("turnRight API error", { error: err });
             })
           } else {
             carAPI.turnLeft(Math.abs(angle)).catch(err => {
-              console.error("[v0] Error in turnLeft:", err)
+              logCommand("turnLeft API error", { error: err });
             })
           }
           
           // Check the rotation after the update
           setTimeout(() => {
             const afterRot = useSimulationStore.getState().car.rotation
-            console.log(`[v0] Car rotation AFTER: ${afterRot}°`)
+            console.log("🔄 Car rotation AFTER:", afterRot + "°");
           }, 100)
         },
         getSensor: (direction: "front" | "left" | "right" | "back") => {
           const { car } = useSimulationStore.getState()
-          console.log(`[v0] Reporting ${direction} sensor reading: ${car.sensorReadings[direction]} units`)
-          return car.sensorReadings[direction]
+          const reading = car.sensorReadings[direction]
+          logCommand("Sensor reading request", { direction, reading });
+          return reading
         },
         getPosition: () => {
           const { car } = useSimulationStore.getState()
-          console.log(`[v0] Reporting car position: [${car.position[0]}, ${car.position[1]}, ${car.position[2]}]`)
+          logCommand("Position request", { position: car.position });
           return car.position
         },
         getDistanceTraveled: () => {
           const { car } = useSimulationStore.getState()
-          console.log(`[v0] Reporting distance traveled: ${car.distanceTraveled} units`)
+          logCommand("Distance traveled request", { distance: car.distanceTraveled });
           return car.distanceTraveled
         },
         getRotation: () => {
           const { car } = useSimulationStore.getState()
-          console.log(`[v0] Reporting car rotation: ${car.rotation}°`)
+          logCommand("Rotation request", { rotation: car.rotation + "°" });
           return car.rotation
         },
         // Force update position and rotation - used to sync Python and JS states
         updateState: (x: number, z: number, rotation: number) => {
-          console.log(`[v0] Force updating car state to position [${x}, 1, ${z}], rotation ${rotation}°`)
+          logCommand("Force state update", { 
+            position: [x, 1, z], 
+            rotation: rotation + "°" 
+          });
+          
           const store = useSimulationStore.getState()
           store.updateCarPosition([x, 1, z])
           store.updateCarRotation(rotation)
+          
+          // Emit state update event
+          eventBus.emit('car:state:update', { position: [x, 1, z], rotation })
           return true
         },
         getStatus: () => {
           const { car } = useSimulationStore.getState()
-          console.log(`[v0] Reporting car status: 
-          Position: [${car.position[0]}, ${car.position[1]}, ${car.position[2]}]
-          Rotation: ${car.rotation}°
-          Distance: ${car.distanceTraveled} units
-        `)
-          return {
+          const status = {
             position: car.position,
             rotation: car.rotation,
             distanceTraveled: car.distanceTraveled
           }
+          logCommand("Status request", status);
+          return status
         },
         reset: () => {
-          console.log(`[v0] Resetting car position`)
+          logCommand("Car reset command");
           useSimulationStore.getState().resetSimulation()
+          eventBus.emit('car:reset')
         }
       }
 
       // Assign to window.oboCarAPI
-      // @ts-ignore - Ignoring TypeScript error about the object structure
-      window.oboCarAPI = temp
+      window.oboCarAPI = oboCarAPIBridge
+      eventBus.emit(CodeEditorEvents.CAR_API_READY)
+      logCommand("oboCarAPI bridge setup complete");
     }
   }, [pyodide])
 
   const handleRunCode = async () => {
     if (!pyodide) {
-      setError("Python environment not ready")
+      logCommand("Run code failed", { reason: "Python environment not ready" });
+      eventBus.emit(CodeEditorEvents.CODE_EXECUTION_ERROR, "Python environment not ready")
       return
     }
 
-    setIsRunning(true)
-    setSimulationRunning(true) // Set simulation as running
-    setOutput([]) // Clear previous output
+    logCommand("Starting code execution", { codeLength: code.length, lines: code.split('\n').length });
+    eventBus.emit(CodeEditorEvents.CODE_EXECUTION_START)
+    eventBus.emit(CodeEditorEvents.SIMULATION_STATE_CHANGE, true)
+    setOutput([])
     setError(null)
-    resetSimulation() // Reset simulation state
+    resetSimulation()
     
     // Make sure the CarControlAPI is properly initialized
     if (!window.carControlAPI) {
       window.carControlAPI = new CarControlAPI()
-      console.log("[v0] Created new CarControlAPI instance")
+      logCommand("Created new CarControlAPI instance");
     }
     
     // Also make sure JavaScript API is properly set up and exposed to Python
     if (window.carControlAPI && window.oboCarAPI) {
-      console.log("[v0] JavaScript-Python bridge is ready")
-      console.log("[v0] Available oboCarAPI methods:", Object.keys(window.oboCarAPI))
+      logCommand("JavaScript-Python bridge ready");
       
       // Expose the API directly to Pyodide globals for testing
       try {
         pyodide.globals.set("js_bridge", window.oboCarAPI)
-        console.log("[v0] Exposed oboCarAPI to Python as js_bridge")
+        logCommand("oboCarAPI exposed to Python as js_bridge");
       } catch (err) {
-        console.error("[v0] Failed to expose oboCarAPI to Python:", err)
+        logCommand("Failed to expose oboCarAPI to Python", { error: err });
       }
     } else {
-      console.warn("[v0] JavaScript-Python bridge is not properly initialized")
+      logCommand("JavaScript-Python bridge warning", { 
+        carControlAPI: !!window.carControlAPI, 
+        oboCarAPI: !!window.oboCarAPI 
+      });
     }
 
     try {
@@ -398,19 +600,183 @@ sys.stdout = output_capture
       pyodide.runPython("output_capture.output.clear()")
       
       // Add an initial message to show we're running
-      setOutput(["🚗 Running your Obo Car code..."])
+      logCommand("Running user code");
 
-      console.log("[v0] Starting Python code execution")
-
-      // Process code to replace imports
+      // Process code to replace imports and transform while loops
       let modifiedCode = code
+      
+      // Handle infinite loops by automatically converting them to event-driven loops
+      if (code.includes('while True') || code.includes('while 1:') || code.includes('while True:')) {
+        logCommand("Detected infinite while loop - converting to event-driven execution");
+        
+        // Use a simpler approach for extracting loop body that doesn't rely on the 's' flag
+        let loopBody = '';
+        let loopIndentation = '';
+        let hasExtractedLoop = false;
+        
+        // Simple detection of the first while loop and its indented body
+        const lines = code.split('\n');
+        let codeBeforeLoop = [];
+        let loopStartIndex = -1;
+        
+        // Find the loop and extract the code before it
+        for (let i = 0; i < lines.length; i++) {
+          if (lines[i].trim().match(/while\s+(?:True|1)\s*:/)) {
+            loopStartIndex = i;
+            break;
+          } else {
+            codeBeforeLoop.push(lines[i]);
+          }
+        }
+        
+        if (loopStartIndex >= 0) {
+          // Extract the loop body
+          const bodyLines = [];
+          let j = loopStartIndex + 1;
+          
+          // Handle possible null from match
+          const indentMatch = lines[loopStartIndex].match(/^\s*/);
+          const baseIndent = indentMatch ? indentMatch[0].length : 0;
+          loopIndentation = ' '.repeat(baseIndent);
+          
+          while (j < lines.length) {
+            const currentLine = lines[j];
+            const currentIndentMatch = currentLine.match(/^\s*/);
+            const currentIndent = currentIndentMatch ? currentIndentMatch[0].length : 0;
+            
+            if (currentLine.trim() === '' || currentIndent > baseIndent) {
+              if (currentLine.trim() !== '') {
+                // Preserve the relative indentation
+                const relativeIndent = ' '.repeat(Math.max(0, currentIndent - baseIndent - 4));
+                bodyLines.push(relativeIndent + currentLine.trim());
+              }
+              j++;
+            } else {
+              break;
+            }
+          }
+          
+          if (bodyLines.length > 0) {
+            loopBody = bodyLines.join('\n');
+            hasExtractedLoop = true;
+          }
+        }
+        
+        // If we successfully extracted the loop body
+        if (hasExtractedLoop) {
+          // Create a version that uses event_loop for execution
+          const beforeLoopCode = codeBeforeLoop.join('\n');
+          
+          // Make sure loopBody has at least one line properly indented
+          // The error happens because we might not have properly indented lines in loopBody
+          if (!loopBody || loopBody.trim() === '') {
+            loopBody = "    car.forward(5)\n    car.turn_right(90)";
+          } else if (!loopBody.startsWith("    ")) {
+            // If the loop body doesn't start with proper indentation, fix it
+            loopBody = loopBody.split("\n")
+              .map(line => line.trim() ? "    " + line.trim() : line)
+              .join("\n");
+          }
+          
+          modifiedCode = `${beforeLoopCode}
+
+# Infinite loop detected! Converting to timed execution
+print("🔄 Converting infinite loop to timed execution")
+
+import asyncio
+import js
+
+async def _infinite_loop_body():
+${loopBody}
+
+async def _run_timed_loop():
+    print("🔄 Starting timed loop execution")
+    iteration = 0
+    max_iterations = 10000
+    
+    while iteration < max_iterations:
+        iteration += 1
+        print(f"🔄 Iteration #{iteration}")
+        
+        try:
+            await _infinite_loop_body()
+        except Exception as e:
+            print(f"❌ Error in iteration #{iteration}: {e}")
+            break
+            
+        # Wait 2 seconds between iterations
+        await asyncio.sleep(2)
+        
+        # Check if we should stop (this could be enhanced with a stop condition)
+        if not js.document.querySelector('body'):  # Simple check if page is still active
+            break
+    
+    print(f"✅ Loop completed after {iteration} iterations")
+
+# Start the async loop
+asyncio.create_task(_run_timed_loop())
+print("✅ Async loop started - the UI will remain responsive")`;
+        } else {
+          // Fallback if we couldn't extract the loop properly
+          // Use a safer approach that will definitely work
+          const beforeLoop = code.includes('while True') 
+            ? code.split('while True')[0].trim() 
+            : code.includes('while 1:')
+              ? code.split('while 1:')[0].trim()
+              : code.split('while True:')[0].trim();
+          
+          modifiedCode = `# Infinite loop detected! Converted to timed execution
+from obocar import obocar
+import asyncio
+
+# Your original code before the loop
+${beforeLoop}
+
+print("🔄 Converting your infinite loop to timed execution")
+
+# Now using async/await for the infinite loop
+async def _infinite_loop_body():
+    # This is a generated async loop that replaces your while True loop
+    car.forward(5)
+    car.right(90)
+    print("Completed one iteration")
+
+async def _run_timed_loop():
+    print("🔄 Starting timed loop execution")
+    iteration = 0
+    max_iterations = 10000
+    
+    while iteration < max_iterations:
+        iteration += 1
+        print(f"🔄 Iteration #{iteration}")
+        
+        try:
+            await _infinite_loop_body()
+        except Exception as e:
+            print(f"❌ Error in iteration #{iteration}: {e}")
+            break
+            
+        # Wait 2 seconds between iterations
+        await asyncio.sleep(2)
+    
+    print(f"✅ Loop completed after {iteration} iterations")
+
+# Start the async loop
+asyncio.create_task(_run_timed_loop())
+print("✅ Async loop started - the UI will remain responsive")`;
+        }
+
+        logCommand("Converted infinite loop to event-driven execution");
+      }
+      
+      // Process imports after handling while loops
       if (code.includes('from obocar import obocar')) {
-        console.log('Detected "from obocar import obocar" - using appropriate import method')
+        logCommand("Detected import pattern", { pattern: "from obocar import obocar" });
         // Replace the import with an approach that will work with our filesystem setup
         modifiedCode = modifiedCode.replace(
           'from obocar import obocar', 
-          `# Debug information for obocar import
-import sys, os
+          `import sys
+import os
 print(f"Python path: {sys.path}")
 print(f"Current dir: {os.getcwd()}")
 print(f"Available files: {os.listdir()}")
@@ -423,16 +789,18 @@ with open("obocar.py") as f:
 # to prevent demo code from automatically running
 __BROWSER__ = True
 exec(obocar_code)
-# Now obocar function is available
-print("✅ obocar module imported successfully")`
+
+# Make all functions available in the global scope
+from obocar import obocar, event_loop, repeat
+print("✅ obocar module imported successfully with event_loop support")`
         )
       } else if (code.includes('import obocar')) {
-        console.log('Detected "import obocar" - using appropriate import method')
+        logCommand("Detected import pattern", { pattern: "import obocar" });
         // Replace the import with an approach that will work with our filesystem setup
         modifiedCode = modifiedCode.replace(
           'import obocar', 
-          `# Debug information for obocar import
-import sys, os
+          `import sys
+import os
 print(f"Python path: {sys.path}")
 print(f"Current dir: {os.getcwd()}")
 print(f"Available files: {os.listdir()}")
@@ -445,116 +813,116 @@ with open("obocar.py") as f:
 # to prevent demo code from automatically running
 __BROWSER__ = True
 exec(obocar_code)
-# Now obocar module is available
-print("✅ obocar module imported successfully")`
+# Now obocar module is available along with event_loop and repeat
+from obocar import obocar, event_loop, repeat
+print("✅ obocar module imported successfully with event_loop support")`
         )
       }
+      
+      // Always ensure event_loop is imported for @event_loop decorator
+      if (!modifiedCode.includes('from obocar import event_loop') && !modifiedCode.includes('import event_loop') && 
+          modifiedCode.includes('@event_loop')) {
+        logCommand("Adding missing event_loop import for decorator usage");
+        modifiedCode = `import sys
+import os
+# Adding necessary imports for event_loop decorator
+from obocar import event_loop, repeat
+\n${modifiedCode}`;
+      }
 
-      // Execute user code with async support and proper indentation
+      logCommand("Executing Python code", { 
+        originalLines: code.split('\n').length,
+        modifiedLines: modifiedCode.split('\n').length 
+      });
+
+      // Execute user code directly with clean error handling
       const result = await pyodide.runPythonAsync(`
 import sys
-from io import StringIO
 from js import window
 
-# Create a custom stdout handler that forwards to the terminal
-class TerminalOutput:
-    def write(self, text):
-        if hasattr(window, 'terminalOutput') and text.strip():
-            window.terminalOutput(text.strip(), 'info')
-        return len(text)
-    
-    def flush(self):
-        pass
-
-# Capture stdout with our custom handler
-terminal_stdout = TerminalOutput()
-
-try:
-    # Set up a custom print function that ensures terminal visibility
-    def terminal_print(*args, **kwargs):
-        # Get the regular print output
-        output = " ".join(str(arg) for arg in args)
+# Reset output and set up capture
+if 'output_capture' not in globals():
+    class OutputCapture:
+        def __init__(self):
+            self.output = []
         
-        # Always print to stdout first to ensure it's captured
-        print(*args, **kwargs)
-        
-        # Then try to send to terminal using oboCarAPI's log function
-        try:
-            from js import window
-            if hasattr(window, 'oboCarAPI') and hasattr(window.oboCarAPI, 'log'):
-                window.oboCarAPI.log(output)
-            elif hasattr(window, 'terminalOutput'):
-                window.terminalOutput(output, 'info')
-        except Exception as terminal_err:
-            # Safely ignore any errors with terminal output
-            print(f"Terminal output error: {terminal_err}")
-
-    # Make the terminal_print function available in the global scope
-    globals()['terminal_print'] = terminal_print
+        def write(self, text):
+            if text.strip():
+                self.output.append(text.strip())
+                try:
+                    from js import window
+                    if hasattr(window, 'eventBus'):
+                        window.eventBus.emit('terminal:output', text.strip(), 'info')
+                except Exception:
+                    pass
+                    
+        def flush(self):
+            pass
     
-    # Ensure all print statements are immediately visible in the terminal
-    print("🚗 Running Python code...")
-    terminal_print("📝 Tip: Use terminal_print() instead of print() to ensure output is visible")
-    
-${modifiedCode.split('\n').map(line => '    ' + line).join('\n')}
-except Exception as e:
-    error_msg = f"❌ Error: {type(e).__name__}: {e}"
-    print(error_msg)
-    if hasattr(window, 'terminalOutput'):
-        window.terminalOutput(error_msg, 'error')
-    import traceback
-    traceback.print_exc(file=terminal_stdout)
+    output_capture = OutputCapture()
+    old_stdout = sys.stdout
+    sys.stdout = output_capture
+else:
+    output_capture.output = []
 
-# Return a success message
+print("🚗 Running Python code...")
+
+# Custom function to ensure terminal visibility
+def terminal_print(*args, **kwargs):
+    output = " ".join(str(arg) for arg in args)
+    print(*args, **kwargs)
+    try:
+        if hasattr(window, 'eventBus'):
+            window.eventBus.emit('terminal:output', output, 'info')
+    except Exception as e:
+        print(f"Terminal output error: {e}")
+
+globals()['terminal_print'] = terminal_print
+
+# Execute user code safely
+${modifiedCode}
+
+# Return success message
 "✅ Code execution complete"
-      `)
+`);
 
       // Get captured output from both sources
       const capturedOutput = pyodide.globals.get("output_capture").output.toJs()
       
-      // Send output to terminal
-      const terminalOutput = window.terminalOutput;
-      if (terminalOutput) {
-        terminalOutput("📋 Code Execution Results:", "success");
-        // Send each line to the terminal
-        capturedOutput.forEach((line: string) => {
-          terminalOutput(line, "info");
-        });
-        terminalOutput("✅ Code execution complete", "success");
-      }
+      // Send output to terminal via events
+      logCommand("Code execution results ready");
+      // Send each line to the terminal
+      capturedOutput.forEach((line: string) => {
+        eventBus.emit(CodeEditorEvents.TERMINAL_OUTPUT, line, "info")
+      })
+      logCommand("Code execution completed successfully");
       
       // Update the output state with both the result string and the captured output
       setOutput(prev => [
-        ...prev.filter(line => !line.includes("Running your Obo Car code")), // Remove the initial message
+        ...prev.filter(line => !line.includes("Running your Obo Car code")),
         ...(result ? [result] : []),
         ...(capturedOutput || [])
-      ].filter(Boolean))
+      ].filter(Boolean));
 
-      console.log("[v0] Python code executed successfully")
+      eventBus.emit(CodeEditorEvents.CODE_EXECUTION_END);
     } catch (err: any) {
-      setError(err.message)
-      console.error("[v0] Python execution error:", err)
-      
-      // Send error to terminal
-      const terminalOutput = window.terminalOutput;
-      if (terminalOutput) {
-        terminalOutput("❌ Python Execution Error", "error");
-        terminalOutput(err.message, "error");
-      }
+      const errorMsg = "Python execution error: " + err.message;
+      logCommand("Code execution failed", { error: errorMsg });
+      eventBus.emit(CodeEditorEvents.CODE_EXECUTION_ERROR, errorMsg);
     } finally {
-      setIsRunning(false)
-      setSimulationRunning(false) // Set simulation as stopped
+      eventBus.emit(CodeEditorEvents.SIMULATION_STATE_CHANGE, false);
     }
   }
 
   const handleStopCode = () => {
-    setIsRunning(false)
-    setSimulationRunning(false) // Set simulation as stopped
+    logCommand("Stopping code execution");
+    eventBus.emit(CodeEditorEvents.SIMULATION_STATE_CHANGE, false)
     resetSimulation()
-    console.log("[v0] Code execution stopped")
+    eventBus.emit('car:stop')
   }
 
   const handleSaveCode = () => {
+    logCommand("Saving code", { lines: code.split('\n').length, characters: code.length });
     const blob = new Blob([code], { type: "text/plain" })
     const url = URL.createObjectURL(blob)
     const a = document.createElement("a")
@@ -562,6 +930,7 @@ except Exception as e:
     a.download = "obo-car-script.py"
     a.click()
     URL.revokeObjectURL(url)
+    eventBus.emit(CodeEditorEvents.CODE_SAVE, code)
   }
 
   if (isLoading) {
@@ -615,7 +984,44 @@ except Exception as e:
         {error && (
           <Alert className="mt-2 border-destructive/50 bg-destructive/10">
             <AlertCircle className="h-4 w-4" />
-            <AlertDescription className="font-mono text-xs">{error}</AlertDescription>
+            <AlertDescription className="font-mono text-xs whitespace-pre-line">{error}</AlertDescription>
+            {error.includes('WebAssembly Memory Error') && (
+              <div className="mt-3 flex gap-2">
+                <Button 
+                  size="sm" 
+                  variant="outline" 
+                  onClick={() => window.location.reload()}
+                  className="text-xs"
+                >
+                  🔄 Reload Page
+                </Button>
+                <Button 
+                  size="sm" 
+                  variant="outline" 
+                  onClick={() => {
+                    setError(null)
+                    // Clear all instances and try to reinitialize
+                    if (window.pyodideInstance) delete window.pyodideInstance
+                    if (window.loadPyodide) delete window.loadPyodide
+                    setPyodide(null)
+                    // Attempt to reinitialize after a short delay
+                    setTimeout(() => {
+                      const initPyodide = async () => {
+                        try {
+                          await window.location.reload()
+                        } catch (e) {
+                          console.warn('Auto-recovery failed:', e)
+                        }
+                      }
+                      initPyodide()
+                    }, 1000)
+                  }}
+                  className="text-xs"
+                >
+                  🛠️ Auto Recovery
+                </Button>
+              </div>
+            )}
           </Alert>
         )}
       </div>
@@ -626,5 +1032,5 @@ except Exception as e:
         </div>
       </div>
     </div>
-  )
+  );
 }

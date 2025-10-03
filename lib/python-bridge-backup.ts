@@ -61,43 +61,6 @@ class OboCarBridge {
           activeLoops: useSimulationStore.getState().activeLoops.length
         });
         
-        // Create a persistent proxy to prevent Pyodide from destroying the callback
-        let persistentCallback: any;
-        console.log('🔍 Bridge: window available:', typeof window !== 'undefined');
-        console.log('🔍 Bridge: pyodideInstance available:', !!(window as any).pyodideInstance);
-        
-        try {
-          // Check if pyodide is available and has create_proxy
-          if (typeof window !== 'undefined' && (window as any).pyodideInstance) {
-            const pyodide = (window as any).pyodideInstance;
-            console.log('🔍 Bridge: pyodide.create_proxy available:', !!pyodide.create_proxy);
-            console.log('🔍 Bridge: pyodide.create_once_callable available:', !!pyodide.create_once_callable);
-            
-            if (pyodide.create_proxy) {
-              console.log('🔄 Bridge: Creating persistent proxy for callback');
-              persistentCallback = pyodide.create_proxy(callback);
-              console.log('✅ Bridge: Persistent proxy created successfully');
-              console.log('🔍 Bridge: Proxy type:', typeof persistentCallback);
-            } else if (pyodide.create_once_callable) {
-              console.log('🔄 Bridge: Using create_once_callable as fallback');
-              // For create_once_callable, we'll need to recreate it each time
-              persistentCallback = callback; // We'll handle this differently
-            } else {
-              console.log('⚠️ Bridge: Neither create_proxy nor create_once_callable available, using callback directly');
-              persistentCallback = callback;
-            }
-          } else {
-            console.log('⚠️ Bridge: Pyodide not available, using callback directly');
-            persistentCallback = callback;
-          }
-        } catch (error) {
-          console.log('⚠️ Bridge: Failed to create proxy, using callback directly:', error);
-          persistentCallback = callback;
-        }
-        
-        console.log('🔍 Bridge: Final persistentCallback type:', typeof persistentCallback);
-        console.log('🔍 Bridge: Final persistentCallback === callback:', persistentCallback === callback);
-        
         // Ensure the simulation is running
         const store = useSimulationStore.getState();
         store.setRunning(true); // Make sure the simulation is running
@@ -132,9 +95,7 @@ class OboCarBridge {
           
           try {
             console.log('🔄 Bridge: About to call Python callback...');
-            console.log('🔍 Bridge: persistentCallback type:', typeof persistentCallback);
-            console.log('🔍 Bridge: persistentCallback === callback:', persistentCallback === callback);
-            const result = persistentCallback();
+            const result = callback();
             console.log(`🔄 Bridge: Python callback returned: ${result}`);
             
             // Stop the loop if callback returns false
@@ -211,15 +172,6 @@ class OboCarBridge {
         }
         (window as any).oboCarAPI._activeLoops.set(id, () => {
           isActive = false;
-          // Clean up the persistent proxy if it exists
-          if (persistentCallback && persistentCallback.destroy) {
-            try {
-              persistentCallback.destroy();
-              console.log(`🧹 Bridge: Destroyed persistent proxy for loop ${id}`);
-            } catch (error) {
-              console.log(`⚠️ Bridge: Failed to destroy proxy for loop ${id}:`, error);
-            }
-          }
           console.log(`🧹 Bridge: Loop ${id} deactivated`);
         });
         
@@ -305,7 +257,6 @@ class OboCarBridge {
         const store = this.getStore()
         
         // Determine turn direction and add appropriate command
-        // User expects the car to turn in the direction they specified
         if (angle > 0) {
           store.addCommand({
             type: 'turn_right',
@@ -339,7 +290,20 @@ class OboCarBridge {
         // Convert degrees to radians for Three.js
         const angleInRadians = (angleInDegrees * Math.PI) / 180
         
-        // Use the store's built-in methods instead of set
+        // Update the car's rotation directly
+        set((state) => ({
+          carPhysics: {
+            ...state.carPhysics,
+            rotation: new THREE.Euler(0, angleInRadians, 0)
+          },
+          carAnimation: {
+            ...state.carAnimation,
+            targetRotation: new THREE.Euler(0, angleInRadians, 0)
+          },
+          // Update cumulative angle for Python synchronization
+          cumulativeAngle: angleInDegrees
+        }))
+        
         console.log(`✅ Bridge: Car rotation synced to ${angleInDegrees}° (${angleInRadians} radians)`)
         return true
       },
@@ -441,18 +405,33 @@ class OboCarBridge {
     updateState: (position: any, angle?: number) => {
       const store = this.getStore()
       
-      console.log(`🔄 Bridge: Updating state - position: ${position ? 'provided' : 'none'}, angle: ${angle ?? 'none'}`)
-      
-      // For now, just log the update request since we don't have direct access to set
-      // The actual state updates should be handled through commands
       if (position && typeof position === 'object') {
         if (position.x !== undefined && position.y !== undefined && position.z !== undefined) {
-          console.log(`📍 Bridge: Position update requested: (${position.x}, ${position.y}, ${position.z})`)
+          set((state) => ({
+            carPhysics: {
+              ...state.carPhysics,
+              position: new THREE.Vector3(position.x, position.y, position.z)
+            },
+            carAnimation: {
+              ...state.carAnimation,
+              targetPosition: new THREE.Vector3(position.x, position.y, position.z)
+            }
+          }))
         }
       }
       
       if (angle !== undefined) {
-        console.log(`🔄 Bridge: Rotation update requested: ${angle}°`)
+        const angleInRadians = (angle * Math.PI) / 180
+        set((state) => ({
+          carPhysics: {
+            ...state.carPhysics,
+            rotation: new THREE.Euler(0, angleInRadians, 0)
+          },
+          carAnimation: {
+            ...state.carAnimation,
+            targetRotation: new THREE.Euler(0, angleInRadians, 0)
+          }
+        }))
       }
       
       return true

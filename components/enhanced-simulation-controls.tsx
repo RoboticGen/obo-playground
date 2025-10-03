@@ -67,6 +67,7 @@ export function SimulationControls() {
       case AnimationState.MOVING_BACKWARD:
         return "outline"
       case AnimationState.TURNING_LEFT:
+        return "secondary"
       case AnimationState.TURNING_RIGHT:
         return "secondary"
       case AnimationState.STOPPING:

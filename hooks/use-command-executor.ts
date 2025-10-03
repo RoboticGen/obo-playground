@@ -31,10 +31,18 @@ export function useCommandExecutor() {
     }
   }, [isExecuting, currentCommand, commandQueue.length, isRunning, executeNextCommand])
 
-  // Stop simulation when all commands are executed
+  // Stop simulation when all commands are executed (but only if no active loops)
   useEffect(() => {
     if (isRunning && !isExecuting && !currentCommand && commandQueue.length === 0) {
-      // All commands completed, stop simulation
+      // Check if there are active event loops before stopping
+      const state = useSimulationStore.getState();
+      console.log(`🔍 CommandExecutor: All commands done. Active loops: ${state.activeLoops.length}`);
+      if (state.activeLoops.length > 0) {
+        console.log('🔄 Commands completed but event loops are active, keeping simulation running');
+        return; // Don't stop the simulation if there are active loops
+      }
+      
+      // All commands completed and no active loops, stop simulation
       setTimeout(() => {
         setRunning(false)
       }, 500) // Small delay to let final animations complete

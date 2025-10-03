@@ -2,6 +2,46 @@ import { create } from "zustand"
 import { subscribeWithSelector } from "zustand/middleware"
 import * as THREE from "three"
 
+// ============================================
+// UTILITY FUNCTIONS FOR ROTATION HANDLING
+// ============================================
+
+/**
+ * Normalize an angle to the range [-PI, PI]
+ * This prevents angle wrapping issues
+ */
+function normalizeAngle(angle: number): number {
+  while (angle > Math.PI) angle -= 2 * Math.PI
+  while (angle < -Math.PI) angle += 2 * Math.PI
+  return angle
+}
+
+/**
+ * Calculate the shortest angular difference between two angles
+ * Returns a value in the range [-PI, PI]
+ */
+function shortestAngleDiff(from: number, to: number): number {
+  const diff = normalizeAngle(to - from)
+  return diff
+}
+
+/**
+ * Normalize a quaternion to ensure it represents the shortest rotation
+ * Prevents flipping by ensuring the quaternion is in the correct hemisphere
+ */
+function normalizeQuaternion(quat: THREE.Quaternion, reference: THREE.Quaternion): THREE.Quaternion {
+  // If the dot product is negative, the quaternions are in opposite hemispheres
+  // Negate one to ensure we take the shortest path
+  if (quat.dot(reference) < 0) {
+    quat.set(-quat.x, -quat.y, -quat.z, -quat.w)
+  }
+  return quat
+}
+
+// ============================================
+// ANIMATION STATES AND TYPES
+// ============================================
+
 // Animation States
 export enum AnimationState {
   IDLE = 'idle',
@@ -91,6 +131,9 @@ export interface SimulationStore {
   // Python Synchronization
   cumulativeAngle: number // Track total rotation for Python sync
 
+  // Event-driven execution
+  activeLoops: NodeJS.Timeout[] // Track active event loops
+  
   // Command System
   commandQueue: MovementCommand[]
   currentCommand: MovementCommand | null
@@ -140,6 +183,11 @@ export interface SimulationStore {
   addObstacle: (obstacle: Omit<SimulationStore['obstacles'][0], 'id'>) => void    
   removeObstacle: (id: string) => void
   clearObstacles: () => void
+  
+  // Event Loop Management
+  registerEventLoop: (id: NodeJS.Timeout) => void
+  clearEventLoop: (id: NodeJS.Timeout) => void
+  clearAllEventLoops: () => void
 
   // Simulation Actions
   resetSimulation: () => void
@@ -249,6 +297,8 @@ export const useSimulationStore = create<SimulationStore>()(
     
     cumulativeAngle: 0, // Initialize Python cumulative angle
 
+    activeLoops: [], // Initialize active event loops array
+    
     commandQueue: [],
     currentCommand: null,
     commandHistory: [],
@@ -309,9 +359,15 @@ export const useSimulationStore = create<SimulationStore>()(
 
     executeNextCommand: async () => {
       const state = get()
-      if (state.commandQueue.length === 0 || state.isExecuting) return
+      // Don't start a new command if we're already executing one or if the queue is empty
+      if (state.commandQueue.length === 0 || state.isExecuting) {
+        console.log(`Cannot execute next command: ${state.isExecuting ? 'Already executing' : 'Queue empty'}`);
+        return;
+      }
 
+      console.log(`⏩ Starting next command execution, queue length: ${state.commandQueue.length}`);
       const nextCommand = state.commandQueue[0]
+      // Set executing state and remove command from queue
       set({
         isExecuting: true,
         currentCommand: nextCommand,
@@ -321,22 +377,73 @@ export const useSimulationStore = create<SimulationStore>()(
       try {
         await executeCommand(nextCommand, get, set)
 
-        // Ensure animation state is IDLE when command completes
-        set((state) => ({
-          commandHistory: [...state.commandHistory, { ...nextCommand, executed: true, endTime: Date.now() }],
-          currentCommand: null,
-          isExecuting: false,
-          metrics: { ...state.metrics, commandsExecuted: state.metrics.commandsExecuted + 1 },
-          carAnimation: {
-            ...state.carAnimation,
-            currentState: AnimationState.IDLE
-          },
-          carPhysics: {
-            ...state.carPhysics,
-            velocity: new THREE.Vector3(0, 0, 0),
-            angularVelocity: new THREE.Vector3(0, 0, 0)
-          }
-        }))
+        // Get the current position and rotation to preserve them
+        const currentPos = get().carPhysics.position.clone();
+        const currentRot = get().carPhysics.rotation.clone();
+        
+        console.log(`Command completed. Final position: (${currentPos.x.toFixed(2)}, ${currentPos.y.toFixed(2)}, ${currentPos.z.toFixed(2)}), rotation: ${(currentRot.y * 180 / Math.PI).toFixed(1)}°`);
+        
+        // Complete the command execution - clear the current command marker
+        set((state) => {
+          // First, create a snapshot of the position and rotation that we want to preserve
+          const finalPos = currentPos.clone();
+          const finalRot = currentRot.clone();
+          
+          // Return the immediate state update
+          const result = {
+            commandHistory: [...state.commandHistory, { ...nextCommand, executed: true, endTime: Date.now() }],
+            currentCommand: null,
+            isExecuting: false,
+            metrics: { ...state.metrics, commandsExecuted: state.metrics.commandsExecuted + 1 },
+            carAnimation: {
+              ...state.carAnimation,
+              currentState: AnimationState.IDLE,
+              targetPosition: finalPos,
+              targetRotation: finalRot
+            },
+            carPhysics: {
+              ...state.carPhysics,
+              position: finalPos,  // Preserve current position
+              rotation: finalRot,  // Preserve current rotation
+              velocity: new THREE.Vector3(0, 0, 0),
+              angularVelocity: new THREE.Vector3(0, 0, 0)
+            }
+          };
+          
+          // Process next command immediately if there are more in the queue
+          // This ensures continuous execution of commands in a loop
+          setTimeout(() => {
+            const latestState = get();
+            
+            // Ensure the position is absolutely preserved
+            if (!latestState.carPhysics.position.equals(finalPos)) {
+              console.log('Position changed after command completion - forcing correction');
+              set({
+                carPhysics: {
+                  ...latestState.carPhysics,
+                  position: finalPos.clone(),
+                  rotation: finalRot.clone()
+                }
+              });
+            }
+            
+            // Critical: Always check the command queue and execute next command if available
+            if (latestState.commandQueue.length > 0 && latestState.isRunning) {
+              console.log(`🔄 Auto-executing next command, ${latestState.commandQueue.length} commands remaining`);
+              // Use requestAnimationFrame for smoother timing
+              requestAnimationFrame(() => {
+                const currentState = get();
+                if (!currentState.isExecuting && currentState.commandQueue.length > 0) {
+                  currentState.executeNextCommand();
+                }
+              });
+            } else {
+              console.log(`✅ Command sequence complete, queue empty: ${latestState.commandQueue.length === 0}`);
+            }
+          }, 50);
+          
+          return result;
+        });
       } catch (error) {
         console.error('Command execution error:', error)
         set({
@@ -393,20 +500,94 @@ export const useSimulationStore = create<SimulationStore>()(
 
     clearObstacles: () => set({ obstacles: [] }),
 
+    // Event Loop Management
+    registerEventLoop: (id: NodeJS.Timeout) => set((state) => ({
+      activeLoops: [...state.activeLoops, id]
+    })),
+    
+    clearEventLoop: (id: NodeJS.Timeout) => set((state) => ({
+      activeLoops: state.activeLoops.filter(loopId => loopId !== id)
+    })),
+    
+    clearAllEventLoops: () => {
+      const state = get()
+      state.activeLoops.forEach(id => {
+        // Clear any active interval
+        if (typeof window !== 'undefined') {
+          clearInterval(id)
+        }
+      })
+      set({ activeLoops: [] })
+    },
+    
     // Simulation Actions
-    resetSimulation: () => set({
-      isRunning: false,
-      isPaused: false,
-      isExecuting: false,
-      carPhysics: { ...defaultCarPhysics },
-      carAnimation: { ...defaultCarAnimation },
-      sensorData: { ...defaultSensorData },
-      metrics: { ...defaultMetrics },
-      cumulativeAngle: 0, // Reset cumulative angle
-      commandQueue: [],
-      currentCommand: null,
-      executionError: null
-    }),
+    resetSimulation: () => {
+      console.log('🚨 Reset simulation called - this should not happen after command sequence');
+      
+      // Clear any active event loops first
+      get().clearAllEventLoops();
+      
+      // Get the current state
+      const currentState = get();
+      
+      // Check if the car has moved significantly from origin
+      const hasMovedFromOrigin = 
+        Math.abs(currentState.carPhysics.position.x) > 0.1 || 
+        Math.abs(currentState.carPhysics.position.z) > 0.1;
+      
+      // Preserve position if the car has moved, otherwise use default
+      const positionToUse = hasMovedFromOrigin 
+        ? currentState.carPhysics.position.clone()
+        : new THREE.Vector3(0, 1, 0);
+      
+      // Preserve rotation
+      const rotationToUse = currentState.carPhysics.rotation.clone();
+      
+      console.log(`Reset simulation - ${hasMovedFromOrigin ? 'PRESERVING' : 'RESETTING'} position: (${positionToUse.x.toFixed(2)},${positionToUse.y.toFixed(2)},${positionToUse.z.toFixed(2)})`);
+      
+      // Reset with preserved position and rotation
+      set({
+        isRunning: false,
+        isPaused: false,
+        isExecuting: false,
+        carPhysics: { 
+          ...defaultCarPhysics,
+          position: positionToUse,
+          rotation: rotationToUse
+        },
+        carAnimation: { 
+          ...defaultCarAnimation,
+          targetPosition: positionToUse,
+          targetRotation: rotationToUse
+        },
+        sensorData: { ...defaultSensorData },
+        metrics: { ...defaultMetrics },
+        cumulativeAngle: currentState.cumulativeAngle, // Preserve cumulative angle too
+        commandQueue: [],
+        currentCommand: null,
+        executionError: null
+      });
+      
+      // Schedule an additional update to ensure the position sticks
+      setTimeout(() => {
+        const latestState = get();
+        if (latestState.isRunning && !latestState.carPhysics.position.equals(positionToUse)) {
+          console.log('Position changed after reset - forcing correction');
+          set({
+            carPhysics: {
+              ...latestState.carPhysics,
+              position: positionToUse.clone(),
+              rotation: rotationToUse.clone()
+            },
+            carAnimation: {
+              ...latestState.carAnimation,
+              targetPosition: positionToUse.clone(),
+              targetRotation: rotationToUse.clone()
+            }
+          });
+        }
+      }, 100);
+    },
 
     updateMetrics: () => {
       const state = get()
@@ -512,6 +693,15 @@ async function executeCommand(
     command.startTime = startTime
 
     console.log(`Executing command: ${command.type} with value ${command.value || 1} and duration ${command.duration || 1000}ms`)
+    
+    // Mark all commands as executed immediately - this allows Python loops to continue correctly
+    set((state) => ({
+      currentCommand: {
+        ...command,
+        executed: true,
+      }
+    }))
+    
     // Process all command types
     switch (command.type) {
       case 'forward':
@@ -520,7 +710,6 @@ async function executeCommand(
       case 'backward':
         executeBackwardCommand(command, get, set, resolve)
         break
-      // Skip all other command types - resolve immediately
       case 'turn_left':
         console.log(`Executing turn left command: ${command.value} degrees`)      
         executeTurnLeftCommand(command, get, set, resolve)
@@ -559,11 +748,14 @@ async function executeCommand(
 
 // Helper function to process cumulative angles for 3D rotation
 function processAngleForRotation(cumulativeAngle: number): number {
-  // Simply normalize angle to 0-360 range and return it directly
-  // The 3D scene should rotate to the exact cumulative angle position
-  const normalizedAngle = ((cumulativeAngle % 360) + 360) % 360
-  console.log(`🔄 3D Rotation: ${cumulativeAngle}° → normalized: ${normalizedAngle}°`)
-  return normalizedAngle
+  // Normalize angle to [-180, 180] range for consistent rotation
+  // This uses our utility function to prevent wrapping issues
+  const radians = (cumulativeAngle * Math.PI) / 180
+  const normalizedRadians = normalizeAngle(radians)
+  const normalizedDegrees = (normalizedRadians * 180) / Math.PI
+  
+  console.log(`🔄 3D Rotation: ${cumulativeAngle}° → normalized: ${normalizedDegrees.toFixed(1)}°`)
+  return normalizedDegrees
 }
 
 function executeForwardCommand(
@@ -675,15 +867,32 @@ function executeTurnLeftCommand(
   const { cumulativeAngle, updateCumulativeAngle } = get()
   const newCumulativeAngle = cumulativeAngle + angle // Left turn increases angle (counter-clockwise)
   
-  // Process the cumulative angle for 3D rotation
+  // Process the cumulative angle for 3D rotation with proper normalization
   const processedAngle = processAngleForRotation(newCumulativeAngle)
   
   // Set target rotation based on processed cumulative angle
   const targetRot = new THREE.Euler(0, THREE.MathUtils.degToRad(processedAngle), 0)
+  
+  // Save the current position before rotation - this is critical
+  const currentPos = get().carPhysics.position.clone()
 
-  animateToRotation(targetRot, duration, get, set, () => {
+  console.log(`🔄 Turn Left: ${cumulativeAngle}° → ${newCumulativeAngle}° (cumulative), normalized to ${processedAngle}°`)
+
+  animateToRotation(targetRot, duration, get, set, 'left', angle, () => {
     // Update the cumulative angle in store
     updateCumulativeAngle(newCumulativeAngle)
+    
+    // Important: preserve the current position while updating rotation
+    // This prevents the position from jumping back after a sequence of commands
+    set((state) => ({
+      carPhysics: {
+        ...state.carPhysics,
+        position: currentPos.clone(), // Keep the same position
+        rotation: targetRot.clone(),  // But update rotation
+        velocity: new THREE.Vector3(0, 0, 0),
+        angularVelocity: new THREE.Vector3(0, 0, 0)
+      }
+    }))
     
     // Sync with Python using cumulative angle
     if (typeof window !== 'undefined' && (window as any).oboCarAPI) {
@@ -712,15 +921,32 @@ function executeTurnRightCommand(
   const { cumulativeAngle, updateCumulativeAngle } = get()
   const newCumulativeAngle = cumulativeAngle - angle // Right turn decreases angle (clockwise)
   
-  // Process the cumulative angle for 3D rotation
+  // Process the cumulative angle for 3D rotation with proper normalization
   const processedAngle = processAngleForRotation(newCumulativeAngle)
   
   // Set target rotation based on processed cumulative angle
   const targetRot = new THREE.Euler(0, THREE.MathUtils.degToRad(processedAngle), 0)
+  
+  // Save the current position before rotation - this is critical
+  const currentPos = get().carPhysics.position.clone()
 
-  animateToRotation(targetRot, duration, get, set, () => {
+  console.log(`🔄 Turn Right: ${cumulativeAngle}° → ${newCumulativeAngle}° (cumulative), normalized to ${processedAngle}°`)
+
+  animateToRotation(targetRot, duration, get, set, 'right', angle, () => {
     // Update the cumulative angle in store
     updateCumulativeAngle(newCumulativeAngle)
+    
+    // Important: preserve the current position while updating rotation
+    // This prevents the position from jumping back after a sequence of commands
+    set((state) => ({
+      carPhysics: {
+        ...state.carPhysics,
+        position: currentPos.clone(), // Keep the same position
+        rotation: targetRot.clone(),  // But update rotation
+        velocity: new THREE.Vector3(0, 0, 0),
+        angularVelocity: new THREE.Vector3(0, 0, 0)
+      }
+    }))
     
     // Sync with Python using cumulative angle
     if (typeof window !== 'undefined' && (window as any).oboCarAPI) {
@@ -881,6 +1107,8 @@ function animateToRotation(
   duration: number,
   get: () => SimulationStore,
   set: (fn: (state: SimulationStore) => Partial<SimulationStore>) => void,        
+  direction: 'left' | 'right',
+  requestedAngle: number,
   onComplete: () => void
 ) {
   // Cancel any existing rotation animation
@@ -892,11 +1120,36 @@ function animateToRotation(
   const startTime = Date.now()
   const startRot = get().carPhysics.rotation.clone()
 
+  // Convert Euler to Quaternions for proper interpolation (prevents gimbal lock and flipping)
+  const startQuat = new THREE.Quaternion().setFromEuler(startRot)
+  const targetQuat = new THREE.Quaternion().setFromEuler(targetRot)
+  
+  // CRITICAL FIX: Ensure we rotate in the requested direction
+  // by adjusting the target quaternion if needed
+  const requestedAngleRadians = (requestedAngle * Math.PI) / 180
+  
+  // Calculate the actual angle difference using quaternions
+  const dotProduct = startQuat.dot(targetQuat)
+  
+  // If the dot product is negative, the quaternions will take the long way
+  // We need to negate one to ensure shortest path, UNLESS the user wants the long way
+  if (direction === 'left' && requestedAngle > 180) {
+    // User wants to go the long way left (> 180 degrees)
+    if (dotProduct > 0) targetQuat.set(-targetQuat.x, -targetQuat.y, -targetQuat.z, -targetQuat.w)
+  } else if (direction === 'right' && requestedAngle > 180) {
+    // User wants to go the long way right (> 180 degrees)
+    if (dotProduct > 0) targetQuat.set(-targetQuat.x, -targetQuat.y, -targetQuat.z, -targetQuat.w)
+  } else {
+    // Normal case: take the shortest path
+    if (dotProduct < 0) targetQuat.set(-targetQuat.x, -targetQuat.y, -targetQuat.z, -targetQuat.w)
+  }
+
   // Convert to degrees for logging
   const startDegrees = startRot.y * (180 / Math.PI)
   const targetDegrees = targetRot.y * (180 / Math.PI)
 
-  console.log(`Starting rotation animation: ${startDegrees.toFixed(2)}° → ${targetDegrees.toFixed(2)}°`)
+  console.log(`Starting rotation animation: ${startDegrees.toFixed(2)}° → ${targetDegrees.toFixed(2)}° (${direction}, ${requestedAngle}°)`)
+  
   // Flag to prevent multiple completion calls
   let isCompleted = false
 
@@ -904,17 +1157,23 @@ function animateToRotation(
   const finalCleanup = () => {
     console.log(`Finalizing rotation to ${targetDegrees.toFixed(2)}°`)      
 
-    // Force exact target rotation and zero out velocities
+    // Get the current position to preserve it
+    const currentPos = get().carPhysics.position.clone();
+
+    // Force exact target rotation and zero out velocities while preserving position
     set((state) => ({
       carPhysics: {
         ...state.carPhysics,
+        position: currentPos,  // Explicitly maintain current position
         rotation: targetRot.clone(),
+        velocity: new THREE.Vector3(0, 0, 0),
         angularVelocity: new THREE.Vector3(0, 0, 0)
       },
       carAnimation: {
         ...state.carAnimation,
         animationProgress: 1,
-        targetRotation: targetRot.clone()
+        targetRotation: targetRot.clone(),
+        targetPosition: currentPos  // Update target position too
       }
     }))
   }
@@ -926,30 +1185,23 @@ function animateToRotation(
     const elapsed = Date.now() - startTime
     const progress = Math.min(elapsed / duration, 1)
 
-    // Use proper angle interpolation to avoid the long way around
-    const startY = startRot.y
-    const targetY = targetRot.y
+    // Use quaternion SLERP (Spherical Linear Interpolation) for smooth rotation
+    // This prevents gimbal lock and flipping issues
+    const currentQuat = new THREE.Quaternion().slerpQuaternions(startQuat, targetQuat, progress)
     
-    // Calculate the shortest angle difference
-    let angleDiff = targetY - startY
-    if (angleDiff > Math.PI) {
-      angleDiff -= 2 * Math.PI
-    } else if (angleDiff < -Math.PI) {
-      angleDiff += 2 * Math.PI
+    // Convert back to Euler for storage
+    const currentRot = new THREE.Euler().setFromQuaternion(currentQuat)
+
+    // Normalize the Y rotation to be consistent
+    currentRot.y = ((currentRot.y % (2 * Math.PI)) + (2 * Math.PI)) % (2 * Math.PI)
+    if (currentRot.y > Math.PI) {
+      currentRot.y -= 2 * Math.PI
     }
-    
-    const currentY = startY + angleDiff * progress
 
-    const currentRot = new THREE.Euler(
-      THREE.MathUtils.lerp(startRot.x, targetRot.x, progress),
-      currentY,
-      THREE.MathUtils.lerp(startRot.z, targetRot.z, progress)
-    )
-
-    // Log every 25% progress
+    // Log progress at key intervals
     const currentDegrees = currentRot.y * (180 / Math.PI)
-    if (progress % 0.25 < 0.01) {
-      //console.log(`Rotation progress: ${(progress * 100).toFixed(0)}%, current: ${currentDegrees.toFixed(2)}°`)
+    if (progress === 0 || progress === 1 || Math.abs(progress - 0.5) < 0.02) {
+      console.log(`Rotation progress: ${(progress * 100).toFixed(0)}%, current: ${currentDegrees.toFixed(2)}°`)
     }
 
     set((state) => ({
