@@ -3,7 +3,15 @@
 import { useState, useRef, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Play, Save, AlertCircle, CheckCircle, Square } from "lucide-react"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { Play, Save, AlertCircle, CheckCircle, Square, BookOpen, ChevronLeft, ChevronRight, Copy } from "lucide-react"
 import { CarControlAPI, useSimulationStore } from "@/lib/car-control-system"
 import { eventBus } from "@/lib/event-bus"
 
@@ -13,6 +21,97 @@ const defaultCode = `from obocar import obocar
 car = obocar()
 car.wait(0.5)
 `
+
+// Code examples for users
+const codeExamples = [
+  {
+    name: "Basic Movements",
+    description: "Forward, backward, left and right turns",
+    code: `from obocar import obocar
+
+# Create a car instance
+car = obocar()
+
+# Move forward and backward
+car.forward(3)
+car.backward(2)
+
+# Turn right and left
+car.right(90)    # Turn right 90 degrees
+car.forward(2)
+
+car.left(90)     # Turn left 90 degrees
+car.forward(2)
+`
+  },
+  {
+    name: "Square with Repeat",
+    description: "Draw a square using repeat function (easiest way)",
+    code: `from obocar import obocar
+
+# Create a car instance
+car = obocar()
+
+
+for i in range(4):
+    car.forward(5)
+    car.right(90)
+`
+  },
+  {
+    name: "While Loop with Counter",
+    description: "While loop with counter using mutable list",
+    code: `from obocar import obocar
+
+# Create a car instance
+car = obocar()
+
+# Use list for mutable counter (workaround for variable scope)
+i = [0]
+
+while i[0]<4:
+     # This is like: while i < 4:
+    car.forward(1)
+    car.right(90)
+    
+    i[0] += 1
+    
+`
+  },
+  {
+    name: "Complex Pattern",
+    description: "Zigzag pattern with alternating turns",
+    code: `from obocar import obocar
+
+# Create a car instance
+car = obocar()
+
+# Zigzag pattern using while loop
+turn_right = [True]
+steps = [0]
+
+def zigzag_step():
+    # Move forward
+    car.forward(2)
+    
+    # Alternate between right and left turns
+    if turn_right[0]:
+        car.right(60)
+        print("Turning right")
+    else:
+        car.left(60)
+        print("Turning left")
+    
+    turn_right[0] = not turn_right[0]
+    steps[0] += 1
+
+while True:
+    zigzag_step()
+
+
+`
+  }
+]
 
 // Event Types
 export enum CodeEditorEvents {
@@ -109,6 +208,8 @@ export function CodeEditor() {
   const [pyodide, setPyodide] = useState<PyodideInterface | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [loadingProgress, setLoadingProgress] = useState("Initializing...")
+  const [showExamplesDialog, setShowExamplesDialog] = useState(false)
+  const [currentExampleIndex, setCurrentExampleIndex] = useState(0)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
   const { resetSimulation, setIsRunning: setSimulationRunning } = useSimulationStore()
@@ -606,7 +707,11 @@ This is a known issue with Pyodide in some browsers. Solutions:
       let modifiedCode = code
       
       // Handle infinite loops by automatically converting them to event-driven loops
-      if (code.includes('while True') || code.includes('while 1:') || code.includes('while True:')) {
+      // BUT ONLY if the code doesn't already use car.run_loop (which is the correct approach)
+      const hasRunLoop = code.includes('car.run_loop(') || code.includes('car.repeat(')
+      const hasActualWhileTrue = /^\s*while\s+(?:True|1)\s*:/m.test(code)
+      
+      if (hasActualWhileTrue && !hasRunLoop) {
         logCommand("Detected infinite while loop - converting to event-driven execution");
         
         // Use a simpler approach for extracting loop body that doesn't rely on the 's' flag
@@ -933,6 +1038,28 @@ ${modifiedCode}
     eventBus.emit(CodeEditorEvents.CODE_SAVE, code)
   }
 
+  const handleLoadExample = (exampleCode: string, exampleName: string) => {
+    logCommand("Loading example", { name: exampleName });
+    setCode(exampleCode)
+    setError(null)
+    setOutput([`📘 Loaded example: ${exampleName}`])
+    setShowExamplesDialog(false)
+  }
+
+  const handleNextExample = () => {
+    setCurrentExampleIndex((prev) => (prev + 1) % codeExamples.length)
+  }
+
+  const handlePreviousExample = () => {
+    setCurrentExampleIndex((prev) => (prev - 1 + codeExamples.length) % codeExamples.length)
+  }
+
+  const handleCopyExample = () => {
+    const currentExample = codeExamples[currentExampleIndex]
+    navigator.clipboard.writeText(currentExample.code)
+    setOutput(prev => [...prev, `📋 Copied "${currentExample.name}" to clipboard`])
+  }
+
   if (isLoading) {
     return (
       <div className="flex flex-col h-full items-center justify-center">
@@ -969,7 +1096,85 @@ ${modifiedCode}
           <Save className="w-4 h-4" />
           Save
         </Button>
+
+        <Button 
+          onClick={() => {
+            setShowExamplesDialog(true)
+            setCurrentExampleIndex(0)
+          }} 
+          variant="outline" 
+          size="sm" 
+          className="gap-2 bg-transparent"
+        >
+          <BookOpen className="w-4 h-4" />
+          Examples
+        </Button>
       </div>
+
+      {/* Examples Dialog */}
+      <Dialog open={showExamplesDialog} onOpenChange={setShowExamplesDialog}>
+        <DialogContent className="max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="flex items-center justify-between">
+              <span>Code Examples ({currentExampleIndex + 1}/{codeExamples.length})</span>
+              <span className="text-sm font-normal text-muted-foreground">
+                {codeExamples[currentExampleIndex].name}
+              </span>
+            </DialogTitle>
+            <DialogDescription>
+              {codeExamples[currentExampleIndex].description}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="flex-1 overflow-auto bg-muted/30 rounded-md p-4 my-4">
+            <pre className="text-sm font-mono whitespace-pre-wrap">
+              {codeExamples[currentExampleIndex].code}
+            </pre>
+          </div>
+
+          <DialogFooter className="flex flex-row items-center justify-between sm:justify-between">
+            <div className="flex gap-2">
+              <Button
+                onClick={handlePreviousExample}
+                variant="outline"
+                size="sm"
+                disabled={codeExamples.length <= 1}
+              >
+                <ChevronLeft className="w-4 h-4 mr-1" />
+                Previous
+              </Button>
+              <Button
+                onClick={handleNextExample}
+                variant="outline"
+                size="sm"
+                disabled={codeExamples.length <= 1}
+              >
+                Next
+                <ChevronRight className="w-4 h-4 ml-1" />
+              </Button>
+            </div>
+            <div className="flex gap-2">
+              <Button
+                onClick={handleCopyExample}
+                variant="outline"
+                size="sm"
+              >
+                <Copy className="w-4 h-4 mr-1" />
+                Copy
+              </Button>
+              <Button
+                onClick={() => {
+                  const example = codeExamples[currentExampleIndex]
+                  handleLoadExample(example.code, example.name)
+                }}
+                size="sm"
+              >
+                Load Example
+              </Button>
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <div className="flex-1 flex flex-col">
         <textarea
