@@ -305,6 +305,7 @@ class OboCarBridge {
         const store = this.getStore()
         
         // Determine turn direction and add appropriate command
+        // User expects the car to turn in the direction they specified
         if (angle > 0) {
           store.addCommand({
             type: 'turn_right',

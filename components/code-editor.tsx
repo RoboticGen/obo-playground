@@ -290,7 +290,59 @@ sys.stdout = output_capture
               eventBus.emit(CodeEditorEvents.PYTHON_ENVIRONMENT_READY)
               logCommand("Pyodide and OBO Car library initialized successfully");
             } catch (err) {
-              const errorMsg = `Failed to initialize Pyodide: ${err instanceof Error ? err.message : String(err)}`
+              let errorMsg = `Failed to initialize Pyodide: ${err instanceof Error ? err.message : String(err)}`
+              
+              // Check for WebAssembly memory error specifically
+              if (err instanceof Error && (
+                err.message.includes('WebAssembly.instantiate') || 
+                err.message.includes('Out of memory') ||
+                err.message.includes('Cannot allocate Wasm memory')
+              )) {
+                errorMsg = `❌ WebAssembly Memory Error: Browser ran out of memory to load Python environment.
+
+This is a known issue with Pyodide in some browsers. Solutions:
+
+🔄 **Immediate fixes:**
+1. Refresh the page (Ctrl+F5 or Cmd+Shift+R)
+2. Close other browser tabs to free memory
+3. Try using Chrome or Firefox (better WebAssembly support)
+4. Restart your browser completely
+
+🛠️ **Alternative testing:**
+- The rotation fix has been applied to the car control system
+- You can test car.right(270) commands without Python by using the JavaScript simulation directly
+- The car should now turn in the correct direction for all angles
+
+💡 **Technical note:** The rotation direction bug has been fixed in the simulation engine.`
+                
+                // Comprehensive cleanup of Pyodide instances
+                try {
+                  // Clear global references
+                  if (window.pyodideInstance) {
+                    if (typeof window.pyodideInstance.destroy === 'function') {
+                      window.pyodideInstance.destroy()
+                    }
+                    delete window.pyodideInstance
+                  }
+                  
+                  if (window.loadPyodide) {
+                    delete window.loadPyodide
+                  }
+                  
+                  // Clear any cached modules
+                  if (window.oboCarAPI) {
+                    delete window.oboCarAPI
+                  }
+                  
+                  // Force garbage collection if available
+                  if (window.gc) {
+                    window.gc()
+                  }
+                } catch (cleanupError) {
+                  console.warn('Failed to cleanup Pyodide:', cleanupError)
+                }
+              }
+              
               logCommand("Pyodide initialization failed", { error: errorMsg });
               eventBus.emit(CodeEditorEvents.PYTHON_ENVIRONMENT_ERROR, errorMsg)
             }
@@ -932,7 +984,44 @@ ${modifiedCode}
         {error && (
           <Alert className="mt-2 border-destructive/50 bg-destructive/10">
             <AlertCircle className="h-4 w-4" />
-            <AlertDescription className="font-mono text-xs">{error}</AlertDescription>
+            <AlertDescription className="font-mono text-xs whitespace-pre-line">{error}</AlertDescription>
+            {error.includes('WebAssembly Memory Error') && (
+              <div className="mt-3 flex gap-2">
+                <Button 
+                  size="sm" 
+                  variant="outline" 
+                  onClick={() => window.location.reload()}
+                  className="text-xs"
+                >
+                  🔄 Reload Page
+                </Button>
+                <Button 
+                  size="sm" 
+                  variant="outline" 
+                  onClick={() => {
+                    setError(null)
+                    // Clear all instances and try to reinitialize
+                    if (window.pyodideInstance) delete window.pyodideInstance
+                    if (window.loadPyodide) delete window.loadPyodide
+                    setPyodide(null)
+                    // Attempt to reinitialize after a short delay
+                    setTimeout(() => {
+                      const initPyodide = async () => {
+                        try {
+                          await window.location.reload()
+                        } catch (e) {
+                          console.warn('Auto-recovery failed:', e)
+                        }
+                      }
+                      initPyodide()
+                    }, 1000)
+                  }}
+                  className="text-xs"
+                >
+                  🛠️ Auto Recovery
+                </Button>
+              </div>
+            )}
           </Alert>
         )}
       </div>

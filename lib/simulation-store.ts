@@ -2,6 +2,46 @@ import { create } from "zustand"
 import { subscribeWithSelector } from "zustand/middleware"
 import * as THREE from "three"
 
+// ============================================
+// UTILITY FUNCTIONS FOR ROTATION HANDLING
+// ============================================
+
+/**
+ * Normalize an angle to the range [-PI, PI]
+ * This prevents angle wrapping issues
+ */
+function normalizeAngle(angle: number): number {
+  while (angle > Math.PI) angle -= 2 * Math.PI
+  while (angle < -Math.PI) angle += 2 * Math.PI
+  return angle
+}
+
+/**
+ * Calculate the shortest angular difference between two angles
+ * Returns a value in the range [-PI, PI]
+ */
+function shortestAngleDiff(from: number, to: number): number {
+  const diff = normalizeAngle(to - from)
+  return diff
+}
+
+/**
+ * Normalize a quaternion to ensure it represents the shortest rotation
+ * Prevents flipping by ensuring the quaternion is in the correct hemisphere
+ */
+function normalizeQuaternion(quat: THREE.Quaternion, reference: THREE.Quaternion): THREE.Quaternion {
+  // If the dot product is negative, the quaternions are in opposite hemispheres
+  // Negate one to ensure we take the shortest path
+  if (quat.dot(reference) < 0) {
+    quat.set(-quat.x, -quat.y, -quat.z, -quat.w)
+  }
+  return quat
+}
+
+// ============================================
+// ANIMATION STATES AND TYPES
+// ============================================
+
 // Animation States
 export enum AnimationState {
   IDLE = 'idle',
@@ -708,11 +748,14 @@ async function executeCommand(
 
 // Helper function to process cumulative angles for 3D rotation
 function processAngleForRotation(cumulativeAngle: number): number {
-  // Simply normalize angle to 0-360 range and return it directly
-  // The 3D scene should rotate to the exact cumulative angle position
-  const normalizedAngle = ((cumulativeAngle % 360) + 360) % 360
-  console.log(`🔄 3D Rotation: ${cumulativeAngle}° → normalized: ${normalizedAngle}°`)
-  return normalizedAngle
+  // Normalize angle to [-180, 180] range for consistent rotation
+  // This uses our utility function to prevent wrapping issues
+  const radians = (cumulativeAngle * Math.PI) / 180
+  const normalizedRadians = normalizeAngle(radians)
+  const normalizedDegrees = (normalizedRadians * 180) / Math.PI
+  
+  console.log(`🔄 3D Rotation: ${cumulativeAngle}° → normalized: ${normalizedDegrees.toFixed(1)}°`)
+  return normalizedDegrees
 }
 
 function executeForwardCommand(
@@ -824,7 +867,7 @@ function executeTurnLeftCommand(
   const { cumulativeAngle, updateCumulativeAngle } = get()
   const newCumulativeAngle = cumulativeAngle + angle // Left turn increases angle (counter-clockwise)
   
-  // Process the cumulative angle for 3D rotation
+  // Process the cumulative angle for 3D rotation with proper normalization
   const processedAngle = processAngleForRotation(newCumulativeAngle)
   
   // Set target rotation based on processed cumulative angle
@@ -833,7 +876,9 @@ function executeTurnLeftCommand(
   // Save the current position before rotation - this is critical
   const currentPos = get().carPhysics.position.clone()
 
-  animateToRotation(targetRot, duration, get, set, () => {
+  console.log(`🔄 Turn Left: ${cumulativeAngle}° → ${newCumulativeAngle}° (cumulative), normalized to ${processedAngle}°`)
+
+  animateToRotation(targetRot, duration, get, set, 'left', angle, () => {
     // Update the cumulative angle in store
     updateCumulativeAngle(newCumulativeAngle)
     
@@ -876,7 +921,7 @@ function executeTurnRightCommand(
   const { cumulativeAngle, updateCumulativeAngle } = get()
   const newCumulativeAngle = cumulativeAngle - angle // Right turn decreases angle (clockwise)
   
-  // Process the cumulative angle for 3D rotation
+  // Process the cumulative angle for 3D rotation with proper normalization
   const processedAngle = processAngleForRotation(newCumulativeAngle)
   
   // Set target rotation based on processed cumulative angle
@@ -885,7 +930,9 @@ function executeTurnRightCommand(
   // Save the current position before rotation - this is critical
   const currentPos = get().carPhysics.position.clone()
 
-  animateToRotation(targetRot, duration, get, set, () => {
+  console.log(`🔄 Turn Right: ${cumulativeAngle}° → ${newCumulativeAngle}° (cumulative), normalized to ${processedAngle}°`)
+
+  animateToRotation(targetRot, duration, get, set, 'right', angle, () => {
     // Update the cumulative angle in store
     updateCumulativeAngle(newCumulativeAngle)
     
@@ -1060,6 +1107,8 @@ function animateToRotation(
   duration: number,
   get: () => SimulationStore,
   set: (fn: (state: SimulationStore) => Partial<SimulationStore>) => void,        
+  direction: 'left' | 'right',
+  requestedAngle: number,
   onComplete: () => void
 ) {
   // Cancel any existing rotation animation
@@ -1071,11 +1120,36 @@ function animateToRotation(
   const startTime = Date.now()
   const startRot = get().carPhysics.rotation.clone()
 
+  // Convert Euler to Quaternions for proper interpolation (prevents gimbal lock and flipping)
+  const startQuat = new THREE.Quaternion().setFromEuler(startRot)
+  const targetQuat = new THREE.Quaternion().setFromEuler(targetRot)
+  
+  // CRITICAL FIX: Ensure we rotate in the requested direction
+  // by adjusting the target quaternion if needed
+  const requestedAngleRadians = (requestedAngle * Math.PI) / 180
+  
+  // Calculate the actual angle difference using quaternions
+  const dotProduct = startQuat.dot(targetQuat)
+  
+  // If the dot product is negative, the quaternions will take the long way
+  // We need to negate one to ensure shortest path, UNLESS the user wants the long way
+  if (direction === 'left' && requestedAngle > 180) {
+    // User wants to go the long way left (> 180 degrees)
+    if (dotProduct > 0) targetQuat.set(-targetQuat.x, -targetQuat.y, -targetQuat.z, -targetQuat.w)
+  } else if (direction === 'right' && requestedAngle > 180) {
+    // User wants to go the long way right (> 180 degrees)
+    if (dotProduct > 0) targetQuat.set(-targetQuat.x, -targetQuat.y, -targetQuat.z, -targetQuat.w)
+  } else {
+    // Normal case: take the shortest path
+    if (dotProduct < 0) targetQuat.set(-targetQuat.x, -targetQuat.y, -targetQuat.z, -targetQuat.w)
+  }
+
   // Convert to degrees for logging
   const startDegrees = startRot.y * (180 / Math.PI)
   const targetDegrees = targetRot.y * (180 / Math.PI)
 
-  console.log(`Starting rotation animation: ${startDegrees.toFixed(2)}° → ${targetDegrees.toFixed(2)}°`)
+  console.log(`Starting rotation animation: ${startDegrees.toFixed(2)}° → ${targetDegrees.toFixed(2)}° (${direction}, ${requestedAngle}°)`)
+  
   // Flag to prevent multiple completion calls
   let isCompleted = false
 
@@ -1111,30 +1185,23 @@ function animateToRotation(
     const elapsed = Date.now() - startTime
     const progress = Math.min(elapsed / duration, 1)
 
-    // Use proper angle interpolation to avoid the long way around
-    const startY = startRot.y
-    const targetY = targetRot.y
+    // Use quaternion SLERP (Spherical Linear Interpolation) for smooth rotation
+    // This prevents gimbal lock and flipping issues
+    const currentQuat = new THREE.Quaternion().slerpQuaternions(startQuat, targetQuat, progress)
     
-    // Calculate the shortest angle difference
-    let angleDiff = targetY - startY
-    if (angleDiff > Math.PI) {
-      angleDiff -= 2 * Math.PI
-    } else if (angleDiff < -Math.PI) {
-      angleDiff += 2 * Math.PI
+    // Convert back to Euler for storage
+    const currentRot = new THREE.Euler().setFromQuaternion(currentQuat)
+
+    // Normalize the Y rotation to be consistent
+    currentRot.y = ((currentRot.y % (2 * Math.PI)) + (2 * Math.PI)) % (2 * Math.PI)
+    if (currentRot.y > Math.PI) {
+      currentRot.y -= 2 * Math.PI
     }
-    
-    const currentY = startY + angleDiff * progress
 
-    const currentRot = new THREE.Euler(
-      THREE.MathUtils.lerp(startRot.x, targetRot.x, progress),
-      currentY,
-      THREE.MathUtils.lerp(startRot.z, targetRot.z, progress)
-    )
-
-    // Log every 25% progress
+    // Log progress at key intervals
     const currentDegrees = currentRot.y * (180 / Math.PI)
-    if (progress % 0.25 < 0.01) {
-      //console.log(`Rotation progress: ${(progress * 100).toFixed(0)}%, current: ${currentDegrees.toFixed(2)}°`)
+    if (progress === 0 || progress === 1 || Math.abs(progress - 0.5) < 0.02) {
+      console.log(`Rotation progress: ${(progress * 100).toFixed(0)}%, current: ${currentDegrees.toFixed(2)}°`)
     }
 
     set((state) => ({

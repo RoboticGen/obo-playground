@@ -611,10 +611,17 @@ export function useCarAnimation({ carRef }: CarAnimationHookProps) {
     // Process the current animation state
     processAnimationState()
     
-    // Always ensure the car has zero angular velocity (no rotation)
-    if (carRef.current) {
+    // CRITICAL FIX: Only zero angular velocity when NOT actively rotating
+    // This prevents fighting with the rotation animation system
+    const isActivelyRotating = carAnimation.currentState === AnimationState.TURNING_LEFT || 
+                              carAnimation.currentState === AnimationState.TURNING_RIGHT
+    
+    if (carRef.current && !isActivelyRotating) {
+      // Only zero angular velocity when the car should be stationary
       carRef.current.setAngvel({ x: 0, y: 0, z: 0 }, true)
-      
+    }
+    
+    if (carRef.current) {
       // Get current position and velocity
       const pos = carRef.current.translation()
       const vel = carRef.current.linvel()
@@ -628,15 +635,22 @@ export function useCarAnimation({ carRef }: CarAnimationHookProps) {
         carRef.current.setLinvel({ x: 0, y: vel.y, z: vel.z }, true)
       }
       
-      // Use rotation from physics store instead of forcing to zero
-      // Only apply rotation when not actively rotating to avoid conflicts
-      const isActivelyRotating = carAnimation.currentState === AnimationState.TURNING_LEFT || 
-                                carAnimation.currentState === AnimationState.TURNING_RIGHT
+      // CRITICAL FIX: Use rotation from physics store, but DON'T override during active rotation
+      // This prevents conflicts between the animation system and frame-by-frame updates
       
       if (!isActivelyRotating) {
+        // Only apply stored rotation when not actively rotating
         const storeRotation = new THREE.Quaternion().setFromEuler(carPhysics.rotation)
-        carRef.current.setRotation(storeRotation, true)
+        const currentRotation = carRef.current.rotation()
+        const currentQuat = new THREE.Quaternion(currentRotation.x, currentRotation.y, currentRotation.z, currentRotation.w)
+        
+        // Only update if there's a significant difference to avoid micro-adjustments
+        const rotationDiff = storeRotation.angleTo(currentQuat)
+        if (rotationDiff > 0.01) { // Only update if difference is > ~0.57 degrees
+          carRef.current.setRotation(storeRotation, true)
+        }
       }
+      // If actively rotating, let the animation system handle rotation completely
       
       // Check if we should force stop the car
       // This ensures the car stops completely between commands
