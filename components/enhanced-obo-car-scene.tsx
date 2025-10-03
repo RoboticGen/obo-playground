@@ -2,8 +2,8 @@
 
 import { useRef, useEffect, Suspense } from "react"
 import { useFrame } from "@react-three/fiber"
-import { RigidBody } from "@react-three/rapier"
-import { Box, Sphere, Cylinder, Text, Html } from "@react-three/drei"
+import { RigidBody, CuboidCollider } from "@react-three/rapier"
+import { Box, Sphere, Cylinder, Text, Html, useFBX } from "@react-three/drei"
 import * as THREE from 'three'
 import { useSimulationStore, AnimationState } from "@/lib/simulation-store"
 import { useCarAnimation } from "@/hooks/use-car-animation"
@@ -23,67 +23,133 @@ interface RigidBodyApi {
 }
 
 function CarMesh({ animationState }: { animationState: AnimationState }) {
-  const meshRef = useRef<THREE.Mesh>(null)
+  const meshRef = useRef<THREE.Group>(null)
+  const fallbackRef = useRef<THREE.Mesh>(null)
   
-  // Add visual feedback based on animation state
+  // Load FBX model - useFBX must be called unconditionally (React hooks rule)
+  const fbx = useFBX("/models/OBOCAR.fbx")
+  
+  const fbxClone = useRef<THREE.Group | null>(null)
+  const modelLoaded = useRef(false)
+  
+  // Add debugging
+  useEffect(() => {
+    console.log("FBX object received:", fbx)
+    console.log("FBX type:", fbx?.type)
+  }, [fbx])
+  
+  // Clone and setup FBX model
+  useEffect(() => {
+    if (fbx) {
+      console.log("FBX loaded, setting up model...")
+      const clonedFbx = fbx.clone()
+      
+      // Try different scales - FBX models can have very different base scales
+      clonedFbx.scale.set(1, 1, 1) // Start with normal scale
+      
+      // Rotate the model to face forward (positive Z direction)
+      // Rotate 180 degrees to face the correct direction
+      clonedFbx.rotation.y = -Math.PI / 2 // -90 degrees
+      
+      // Log the bounding box to understand the model size
+      const bbox = new THREE.Box3().setFromObject(clonedFbx)
+      const size = new THREE.Vector3()
+      bbox.getSize(size)
+      console.log("FBX Model size:", size)
+      
+      // Auto-scale to reasonable car size (about 2 units long)
+      const maxDimension = Math.max(size.x, size.y, size.z)
+      if (maxDimension > 0) {
+        const targetSize = 4 // Target car length
+        const scale = targetSize / maxDimension
+        clonedFbx.scale.set(scale, scale, scale)
+        console.log("Applied scale:", scale)
+      }
+      
+      // Center the model
+      bbox.setFromObject(clonedFbx)
+      const center = new THREE.Vector3()
+      bbox.getCenter(center)
+      clonedFbx.position.sub(center)
+      clonedFbx.position.y = 0 // Keep on ground
+      
+      // Set up materials - preserve original colors
+      clonedFbx.traverse((child) => {
+        if ((child as THREE.Mesh).isMesh) {
+          child.castShadow = true
+          child.receiveShadow = true
+          
+          const mesh = child as THREE.Mesh
+          console.log("Found mesh in FBX:", mesh.name)
+          
+          // Keep original materials and colors from the FBX file
+          // Just ensure they have proper lighting properties if needed
+          if (mesh.material) {
+            if (Array.isArray(mesh.material)) {
+              mesh.material.forEach(mat => {
+                // Don't change color, just update if it's a standard material
+                if ((mat as THREE.MeshStandardMaterial).isMeshStandardMaterial) {
+                  mat.needsUpdate = true
+                }
+              })
+            } else {
+              const material = mesh.material as any
+              // Keep original colors, just ensure it updates
+              if (material.isMeshStandardMaterial) {
+                material.needsUpdate = true
+              }
+            }
+          }
+        }
+      })
+      
+      fbxClone.current = clonedFbx
+      modelLoaded.current = true
+      console.log("FBX model setup complete!")
+    }
+  }, [fbx])
+  
+  // Remove color-changing animation feedback for FBX model to preserve original colors
   useFrame((state, delta) => {
-    if (!meshRef.current || !meshRef.current.material) return
-    
-    const material = meshRef.current.material as THREE.MeshStandardMaterial
-    
-    // Add subtle visual effects based on state
-    switch (animationState) {
-      case AnimationState.MOVING_FORWARD:
-        material.color.setHex(0x00ff00) // Green when moving forward
-        break
-      case AnimationState.MOVING_BACKWARD:
-        material.color.setHex(0xff6600) // Orange when moving backward
-        break
-      case AnimationState.TURNING_LEFT:
-      case AnimationState.TURNING_RIGHT:
-        material.color.setHex(0x0066ff) // Blue when turning
-        break
-      case AnimationState.STOPPING:
-        material.color.setHex(0xff0000) // Red when stopping
-        break
-      default:
-        material.color.setHex(0x3b82f6) // Default blue
+    // Only change colors if using fallback geometry (not FBX)
+    if (!fbxClone.current && fallbackRef.current && fallbackRef.current.material) {
+      // Update fallback box color based on animation state
+      const material = fallbackRef.current.material as THREE.MeshStandardMaterial
+      switch (animationState) {
+        case AnimationState.MOVING_FORWARD:
+          material.color.setHex(0x00ff00)
+          break
+        case AnimationState.MOVING_BACKWARD:
+          material.color.setHex(0xff6600)
+          break
+        case AnimationState.TURNING_LEFT:
+        case AnimationState.TURNING_RIGHT:
+          material.color.setHex(0x0066ff)
+          break
+        case AnimationState.STOPPING:
+          material.color.setHex(0xff0000)
+          break
+        default:
+          material.color.setHex(0x3b82f6)
+      }
     }
   })
 
   return (
-    <group>
-      {/* Main car body */}
-      <Box ref={meshRef} args={[2, 0.8, 4]} castShadow receiveShadow>
-        <meshStandardMaterial />
-      </Box>
-      
-      {/* Car windows */}
-      <Box args={[1.8, 0.6, 2]} position={[0, 0.5, 0]} castShadow>
-        <meshStandardMaterial color="#87ceeb" transparent opacity={0.7} />
-      </Box>
-      
-      {/* Wheels */}
-      <Cylinder args={[0.4, 0.4, 0.2]} position={[-0.8, -0.4, 1.2]} rotation={[0, 0, Math.PI / 2]} castShadow>
-        <meshStandardMaterial color="#2d2d2d" />
-      </Cylinder>
-      <Cylinder args={[0.4, 0.4, 0.2]} position={[0.8, -0.4, 1.2]} rotation={[0, 0, Math.PI / 2]} castShadow>
-        <meshStandardMaterial color="#2d2d2d" />
-      </Cylinder>
-      <Cylinder args={[0.4, 0.4, 0.2]} position={[-0.8, -0.4, -1.2]} rotation={[0, 0, Math.PI / 2]} castShadow>
-        <meshStandardMaterial color="#2d2d2d" />
-      </Cylinder>
-      <Cylinder args={[0.4, 0.4, 0.2]} position={[0.8, -0.4, -1.2]} rotation={[0, 0, Math.PI / 2]} castShadow>
-        <meshStandardMaterial color="#2d2d2d" />
-      </Cylinder>
-      
-      {/* Headlights */}
-      <Sphere args={[0.15]} position={[-0.6, 0, 2]} castShadow>
-        <meshStandardMaterial color="#ffffcc" emissive="#ffffcc" emissiveIntensity={0.3} />
-      </Sphere>
-      <Sphere args={[0.15]} position={[0.6, 0, 2]} castShadow>
-        <meshStandardMaterial color="#ffffcc" emissive="#ffffcc" emissiveIntensity={0.3} />
-      </Sphere>
+    <group ref={meshRef}>
+      {fbx ? (
+        <primitive object={fbx} scale={0.025} rotation={[0, -Math.PI / 2, 0]} position={[0, 0.3, 0]} />
+      ) : (
+        // Fallback visible geometry while loading or if FBX fails
+        <group>
+          <Box ref={fallbackRef} args={[2, 0.8, 4]} castShadow receiveShadow>
+            <meshStandardMaterial color="#3b82f6" />
+          </Box>
+          <Box args={[1.8, 0.6, 2]} position={[0, 0.5, 0]} castShadow>
+            <meshStandardMaterial color="#87ceeb" transparent opacity={0.7} />
+          </Box>
+        </group>
+      )}
     </group>
   )
 }
@@ -201,11 +267,14 @@ function OboCarScene() {
         type="dynamic"
         mass={carPhysics.mass}
         friction={carPhysics.friction}
-        colliders="cuboid"
+        colliders={false}
         enabledRotations={[false, true, false]} // Only allow Y-axis rotation
         linearDamping={0.5}
         angularDamping={0.8}
       >
+        {/* Custom invisible collider for physics - simple box shape */}
+        <CuboidCollider args={[1, 0.5, 2]} />
+        
         <CarMesh animationState={animationState} />
         <SensorVisualization />
       </RigidBody>
