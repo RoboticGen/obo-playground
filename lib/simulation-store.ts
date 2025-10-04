@@ -63,6 +63,8 @@ export interface MovementCommand {
   executed: boolean
   startTime?: number
   endTime?: number
+  targetAngle?: number  // Target rotation angle in degrees (for turn commands)
+  startAngle?: number   // Starting rotation angle in degrees (for turn commands)
 }
 
 // Car Physics State
@@ -200,7 +202,7 @@ export interface SimulationStore {
 
 // Default state values
 const defaultCarPhysics: CarPhysicsState = {
-  position: new THREE.Vector3(0, 1, 0),
+  position: new THREE.Vector3(0, 0.5, 0),
   rotation: new THREE.Euler(0, 0, 0),
   velocity: new THREE.Vector3(0, 0, 0),
   angularVelocity: new THREE.Vector3(0, 0, 0),
@@ -214,7 +216,7 @@ const defaultCarPhysics: CarPhysicsState = {
 const defaultCarAnimation: CarAnimationState = {
   currentState: AnimationState.IDLE,
   previousState: AnimationState.IDLE,
-  targetPosition: new THREE.Vector3(0, 1, 0),
+  targetPosition: new THREE.Vector3(0, 0.5, 0),
   targetRotation: new THREE.Euler(0, 0, 0),
   animationProgress: 0,
   transitionSpeed: 2,
@@ -748,14 +750,10 @@ async function executeCommand(
 
 // Helper function to process cumulative angles for 3D rotation
 function processAngleForRotation(cumulativeAngle: number): number {
-  // Normalize angle to [-180, 180] range for consistent rotation
-  // This uses our utility function to prevent wrapping issues
-  const radians = (cumulativeAngle * Math.PI) / 180
-  const normalizedRadians = normalizeAngle(radians)
-  const normalizedDegrees = (normalizedRadians * 180) / Math.PI
-  
-  console.log(`🔄 3D Rotation: ${cumulativeAngle}° → normalized: ${normalizedDegrees.toFixed(1)}°`)
-  return normalizedDegrees
+  // DO NOT NORMALIZE - we need to preserve the full cumulative angle
+  // to support rotations greater than 180 degrees in the correct direction
+  console.log(`🔄 3D Rotation: Using cumulative angle: ${cumulativeAngle.toFixed(1)}°`)
+  return cumulativeAngle
 }
 
 function executeForwardCommand(
@@ -1120,33 +1118,14 @@ function animateToRotation(
   const startTime = Date.now()
   const startRot = get().carPhysics.rotation.clone()
 
-  // Convert Euler to Quaternions for proper interpolation (prevents gimbal lock and flipping)
-  const startQuat = new THREE.Quaternion().setFromEuler(startRot)
-  const targetQuat = new THREE.Quaternion().setFromEuler(targetRot)
-  
-  // CRITICAL FIX: Ensure we rotate in the requested direction
-  // by adjusting the target quaternion if needed
-  const requestedAngleRadians = (requestedAngle * Math.PI) / 180
-  
-  // Calculate the actual angle difference using quaternions
-  const dotProduct = startQuat.dot(targetQuat)
-  
-  // If the dot product is negative, the quaternions will take the long way
-  // We need to negate one to ensure shortest path, UNLESS the user wants the long way
-  if (direction === 'left' && requestedAngle > 180) {
-    // User wants to go the long way left (> 180 degrees)
-    if (dotProduct > 0) targetQuat.set(-targetQuat.x, -targetQuat.y, -targetQuat.z, -targetQuat.w)
-  } else if (direction === 'right' && requestedAngle > 180) {
-    // User wants to go the long way right (> 180 degrees)
-    if (dotProduct > 0) targetQuat.set(-targetQuat.x, -targetQuat.y, -targetQuat.z, -targetQuat.w)
-  } else {
-    // Normal case: take the shortest path
-    if (dotProduct < 0) targetQuat.set(-targetQuat.x, -targetQuat.y, -targetQuat.z, -targetQuat.w)
-  }
+  // DO NOT use quaternion SLERP - it always takes the shortest path!
+  // Instead, interpolate the Y rotation angle directly
+  const startAngleRad = startRot.y
+  const targetAngleRad = targetRot.y
 
   // Convert to degrees for logging
-  const startDegrees = startRot.y * (180 / Math.PI)
-  const targetDegrees = targetRot.y * (180 / Math.PI)
+  const startDegrees = startAngleRad * (180 / Math.PI)
+  const targetDegrees = targetAngleRad * (180 / Math.PI)
 
   console.log(`Starting rotation animation: ${startDegrees.toFixed(2)}° → ${targetDegrees.toFixed(2)}° (${direction}, ${requestedAngle}°)`)
   
@@ -1185,21 +1164,15 @@ function animateToRotation(
     const elapsed = Date.now() - startTime
     const progress = Math.min(elapsed / duration, 1)
 
-    // Use quaternion SLERP (Spherical Linear Interpolation) for smooth rotation
-    // This prevents gimbal lock and flipping issues
-    const currentQuat = new THREE.Quaternion().slerpQuaternions(startQuat, targetQuat, progress)
+    // Direct linear interpolation of Y rotation angle (NO SLERP!)
+    // This preserves the direction and magnitude of rotation
+    const currentAngleRad = startAngleRad + (targetAngleRad - startAngleRad) * progress
     
-    // Convert back to Euler for storage
-    const currentRot = new THREE.Euler().setFromQuaternion(currentQuat)
-
-    // Normalize the Y rotation to be consistent
-    currentRot.y = ((currentRot.y % (2 * Math.PI)) + (2 * Math.PI)) % (2 * Math.PI)
-    if (currentRot.y > Math.PI) {
-      currentRot.y -= 2 * Math.PI
-    }
+    // Create the current rotation (only Y axis rotates)
+    const currentRot = new THREE.Euler(0, currentAngleRad, 0, 'YXZ')
 
     // Log progress at key intervals
-    const currentDegrees = currentRot.y * (180 / Math.PI)
+    const currentDegrees = currentAngleRad * (180 / Math.PI)
     if (progress === 0 || progress === 1 || Math.abs(progress - 0.5) < 0.02) {
       console.log(`Rotation progress: ${(progress * 100).toFixed(0)}%, current: ${currentDegrees.toFixed(2)}°`)
     }

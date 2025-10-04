@@ -143,7 +143,7 @@ function CarMesh({ animationState }: { animationState: AnimationState }) {
   return (
     <group ref={meshRef}>
       {fbx ? (
-        <primitive object={fbx} scale={0.025} rotation={[0, -Math.PI / 2, 0]} position={[0, 0.3, 0]} />
+        <primitive object={fbx} scale={0.025} rotation={[0, -Math.PI / 2, 0]} position={[0, 0, 0]} />
       ) : (
         // Fallback visible geometry while loading or if FBX fails
         <group>
@@ -277,8 +277,8 @@ function OboCarScene() {
         linearDamping={0.5}
         angularDamping={0.8}
       >
-        {/* Custom invisible collider for physics - simple box shape */}
-        <CuboidCollider args={[1, 0.5, 2]} />
+        {/* Custom invisible collider for physics - positioned at bottom of car */}
+        <CuboidCollider args={[1, 0.5, 2]} position={[0, 0, 0]} />
         
         <CarMesh animationState={animationState} />
         <SensorVisualization />

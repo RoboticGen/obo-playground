@@ -431,46 +431,78 @@ export function useCarAnimation({ carRef }: CarAnimationHookProps) {
   const applyLeftRotation = (rigidBody: RigidBodyApi) => {
     if (!currentCommand) return
     
+    // Initialize target angle if not set (use cumulative angle tracking)
+    if (!currentCommand.targetAngle && currentCommand.targetAngle !== 0) {
+      const currentRot = rigidBody.rotation()
+      const currentQuaternion = new THREE.Quaternion(
+        currentRot.x, currentRot.y, currentRot.z, currentRot.w
+      )
+      const currentEuler = new THREE.Euler().setFromQuaternion(currentQuaternion, 'YXZ')
+      let currentAngleDeg = currentEuler.y * (180 / Math.PI)
+      
+      // Use cumulative angle from store if available
+      const storeAngle = useSimulationStore.getState().cumulativeAngle
+      if (storeAngle !== undefined) {
+        currentAngleDeg = storeAngle
+      }
+      
+      // Calculate target angle by adding the rotation amount (LEFT = positive/counter-clockwise)
+      const rotationAmount = currentCommand.value || 90
+      const targetAngleDeg = currentAngleDeg + rotationAmount
+      
+      console.log(`Starting left turn: ${currentAngleDeg.toFixed(1)}° → ${targetAngleDeg.toFixed(1)}° (+${rotationAmount}°)`)
+      currentCommand.targetAngle = targetAngleDeg
+      currentCommand.startAngle = currentAngleDeg
+    }
+    
     // Check if command has been running for its duration
     if (currentCommand.startTime) {
       const elapsedTime = Date.now() - currentCommand.startTime
       if (elapsedTime >= (currentCommand.duration || 1000)) {
-        // Command duration is over, stop the rotation
+        // Command duration is over, apply final rotation
         console.log('Left rotation command duration complete')
         
         // Stop rotation immediately
         rigidBody.setAngvel({ x: 0, y: 0, z: 0 }, true)
         
-        // Apply the final rotation based on the store physics state
-        const targetRotation = new THREE.Quaternion().setFromEuler(carPhysics.rotation)
-        rigidBody.setRotation(targetRotation, true)
+        // Apply exact target rotation (no normalization)
+        const targetAngleRad = (currentCommand.targetAngle || 0) * (Math.PI / 180)
+        const finalEuler = new THREE.Euler(0, targetAngleRad, 0, 'YXZ')
+        const finalRotation = new THREE.Quaternion().setFromEuler(finalEuler)
+        rigidBody.setRotation(finalRotation, true)
         
-        // Force a snapshot of the final angle into the physics state
-        const angle = carPhysics.rotation.y * (180 / Math.PI)
-        console.log(`Final left rotation angle: ${angle.toFixed(1)}°`)
+        // Update cumulative angle in store
+        useSimulationStore.getState().cumulativeAngle = currentCommand.targetAngle || 0
+        
+        console.log(`Final left rotation angle: ${currentCommand.targetAngle?.toFixed(1)}° (cumulative)`)
         
         safeSetAnimationState(AnimationState.IDLE)
         return
       }
     }
     
-    // For faster response, directly apply the rotation instead of using physics
-    // Calculate how much to rotate based on the command duration and elapsed time
-    const rotationAmount = (currentCommand?.value || 90)
-    const radians = (rotationAmount * Math.PI / 180) 
-    
-    // Get current rotation
+    // Get current angle
     const currentRot = rigidBody.rotation()
-    
-    // Convert to THREE quaternion
     const currentQuaternion = new THREE.Quaternion(
       currentRot.x, currentRot.y, currentRot.z, currentRot.w
     )
+    const currentEuler = new THREE.Euler().setFromQuaternion(currentQuaternion, 'YXZ')
     
-    // Create a new euler from the quaternion
-    const euler = new THREE.Euler().setFromQuaternion(currentQuaternion)
-    euler.y += radians * 0.1  // Apply 10% of the total rotation per frame
-    const newRotation = new THREE.Quaternion().setFromEuler(euler)
+    // Use start angle as reference for interpolation
+    const startAngleDeg = currentCommand.startAngle || 0
+    const targetAngleDeg = currentCommand.targetAngle || 0
+    
+    // Calculate progress (0 to 1)
+    const duration = currentCommand.duration || 1000
+    const elapsed = currentCommand.startTime ? Date.now() - currentCommand.startTime : 0
+    const progress = Math.min(elapsed / duration, 1)
+    
+    // Interpolate directly between start and target (NO NORMALIZATION)
+    const newAngleDeg = startAngleDeg + (targetAngleDeg - startAngleDeg) * progress
+    const newAngleRad = newAngleDeg * (Math.PI / 180)
+    
+    const newEuler = new THREE.Euler(0, newAngleRad, 0, 'YXZ')
+    const newRotation = new THREE.Quaternion().setFromEuler(newEuler)
     
     // Apply the rotation
     rigidBody.setRotation(newRotation, true)
@@ -479,46 +511,78 @@ export function useCarAnimation({ carRef }: CarAnimationHookProps) {
   const applyRightRotation = (rigidBody: RigidBodyApi) => {
     if (!currentCommand) return
     
+    // Initialize target angle if not set (use cumulative angle tracking)
+    if (!currentCommand.targetAngle && currentCommand.targetAngle !== 0) {
+      const currentRot = rigidBody.rotation()
+      const currentQuaternion = new THREE.Quaternion(
+        currentRot.x, currentRot.y, currentRot.z, currentRot.w
+      )
+      const currentEuler = new THREE.Euler().setFromQuaternion(currentQuaternion, 'YXZ')
+      let currentAngleDeg = currentEuler.y * (180 / Math.PI)
+      
+      // Use cumulative angle from store if available
+      const storeAngle = useSimulationStore.getState().cumulativeAngle
+      if (storeAngle !== undefined) {
+        currentAngleDeg = storeAngle
+      }
+      
+      // Calculate target angle by subtracting the rotation amount (RIGHT = negative/clockwise)
+      const rotationAmount = currentCommand.value || 90
+      const targetAngleDeg = currentAngleDeg - rotationAmount
+      
+      console.log(`Starting right turn: ${currentAngleDeg.toFixed(1)}° → ${targetAngleDeg.toFixed(1)}° (-${rotationAmount}°)`)
+      currentCommand.targetAngle = targetAngleDeg
+      currentCommand.startAngle = currentAngleDeg
+    }
+    
     // Check if command has been running for its duration
     if (currentCommand.startTime) {
       const elapsedTime = Date.now() - currentCommand.startTime
       if (elapsedTime >= (currentCommand.duration || 1000)) {
-        // Command duration is over, stop the rotation
+        // Command duration is over, apply final rotation
         console.log('Right rotation command duration complete')
         
         // Stop rotation immediately
         rigidBody.setAngvel({ x: 0, y: 0, z: 0 }, true)
         
-        // Apply the final rotation based on the store physics state
-        const targetRotation = new THREE.Quaternion().setFromEuler(carPhysics.rotation)
-        rigidBody.setRotation(targetRotation, true)
+        // Apply exact target rotation (no normalization)
+        const targetAngleRad = (currentCommand.targetAngle || 0) * (Math.PI / 180)
+        const finalEuler = new THREE.Euler(0, targetAngleRad, 0, 'YXZ')
+        const finalRotation = new THREE.Quaternion().setFromEuler(finalEuler)
+        rigidBody.setRotation(finalRotation, true)
         
-        // Force a snapshot of the final angle into the physics state
-        const angle = carPhysics.rotation.y * (180 / Math.PI)
-        console.log(`Final right rotation angle: ${angle.toFixed(1)}°`)
+        // Update cumulative angle in store
+        useSimulationStore.getState().cumulativeAngle = currentCommand.targetAngle || 0
+        
+        console.log(`Final right rotation angle: ${currentCommand.targetAngle?.toFixed(1)}° (cumulative)`)
         
         safeSetAnimationState(AnimationState.IDLE)
         return
       }
     }
     
-    // For faster response, directly apply the rotation instead of using physics
-    // Calculate how much to rotate based on the command duration and elapsed time
-    const rotationAmount = (currentCommand?.value || 90)
-    const radians = (rotationAmount * Math.PI / 180) 
-    
-    // Get current rotation
+    // Get current angle
     const currentRot = rigidBody.rotation()
-    
-    // Convert to THREE quaternion
     const currentQuaternion = new THREE.Quaternion(
       currentRot.x, currentRot.y, currentRot.z, currentRot.w
     )
+    const currentEuler = new THREE.Euler().setFromQuaternion(currentQuaternion, 'YXZ')
     
-    // Create a new euler from the quaternion
-    const euler = new THREE.Euler().setFromQuaternion(currentQuaternion)
-    euler.y -= radians * 0.1  // Apply 10% of the total rotation per frame (negative for right turn)
-    const newRotation = new THREE.Quaternion().setFromEuler(euler)
+    // Use start angle as reference for interpolation
+    const startAngleDeg = currentCommand.startAngle || 0
+    const targetAngleDeg = currentCommand.targetAngle || 0
+    
+    // Calculate progress (0 to 1)
+    const duration = currentCommand.duration || 1000
+    const elapsed = currentCommand.startTime ? Date.now() - currentCommand.startTime : 0
+    const progress = Math.min(elapsed / duration, 1)
+    
+    // Interpolate directly between start and target (NO NORMALIZATION)
+    const newAngleDeg = startAngleDeg + (targetAngleDeg - startAngleDeg) * progress
+    const newAngleRad = newAngleDeg * (Math.PI / 180)
+    
+    const newEuler = new THREE.Euler(0, newAngleRad, 0, 'YXZ')
+    const newRotation = new THREE.Quaternion().setFromEuler(newEuler)
     
     // Apply the rotation
     rigidBody.setRotation(newRotation, true)

@@ -1,6 +1,6 @@
 "use client"
 
-import { Suspense, useEffect, useState } from "react"
+import { Suspense, useEffect } from "react"
 import { Canvas } from "@react-three/fiber"
 import { OrbitControls, Environment, Grid } from "@react-three/drei"
 import { Physics } from "@react-three/rapier"
@@ -16,19 +16,6 @@ import { useCommandExecutor, usePythonCodeParser } from "@/hooks/use-command-exe
 import { oboCarBridge } from "@/lib/python-bridge"
 
 export default function OboPlayground() {
-  const [useWebGPU, setUseWebGPU] = useState(false)
-  
-  // Check WebGPU support on mount
-  useEffect(() => {
-    if (typeof navigator !== 'undefined' && 'gpu' in navigator) {
-      console.log("WebGPU is supported!")
-      setUseWebGPU(true)
-    } else {
-      console.log("WebGPU not supported, using WebGL")
-      setUseWebGPU(false)
-    }
-  }, [])
-  
   const {
     currentCode,
     setCurrentCode,
@@ -136,9 +123,6 @@ export default function OboPlayground() {
                 <CardTitle className="flex items-center gap-2">
                   <Zap className="w-5 h-5" />
                   3D Simulation
-                  <span className="ml-2 text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary">
-                    {useWebGPU ? "WebGPU" : "WebGL"}
-                  </span>
                   {executionError && (
                     <span className="ml-2 text-red-500 text-sm">Error</span>
                   )}
@@ -163,11 +147,7 @@ export default function OboPlayground() {
                     camera={{ position: [10, 8, 10], fov: 60 }}
                     shadows
                     style={{ width: "100%", height: "100%", background: "#1a1a1a" }}
-                    gl={useWebGPU ? {
-                      // WebGPU configuration
-                      powerPreference: "high-performance",
-                    } : {
-                      // WebGL configuration
+                    gl={{
                       antialias: true,
                       alpha: false,
                       stencil: false,
@@ -182,9 +162,6 @@ export default function OboPlayground() {
                     performance={{ min: 0.5 }}
                   >
                     <color attach="background" args={["#1a1a1a"]} />
-                    {useWebGPU && (
-                      <primitive object={new THREE.Color("#1a1a1a")} attach="background" />
-                    )}
                     <ambientLight intensity={0.5} />
                     <directionalLight position={[10, 20, 10]} intensity={1.2} castShadow 
                       shadow-mapSize={[2048, 2048]}
