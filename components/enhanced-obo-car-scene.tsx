@@ -1,6 +1,6 @@
 "use client"
 
-import { useRef, useEffect, Suspense } from "react"
+import { useRef, useEffect, useState, Suspense } from "react"
 import { useFrame } from "@react-three/fiber"
 import { RigidBody, CuboidCollider } from "@react-three/rapier"
 import { Box, Sphere, Cylinder, Text, Html, useFBX } from "@react-three/drei"
@@ -25,22 +25,16 @@ interface RigidBodyApi {
 function CarMesh({ animationState }: { animationState: AnimationState }) {
   const meshRef = useRef<THREE.Group>(null)
   const fallbackRef = useRef<THREE.Mesh>(null)
+  const [isModelReady, setIsModelReady] = useState(false)
   
-  // Load FBX model - useFBX must be called unconditionally (React hooks rule)
+  // Load FBX model - useFBX suspends until model is loaded
   const fbx = useFBX("/models/OBOCAR.fbx")
   
   const fbxClone = useRef<THREE.Group | null>(null)
-  const modelLoaded = useRef(false)
-  
-  // Add debugging
-  useEffect(() => {
-    console.log("FBX object received:", fbx)
-    console.log("FBX type:", fbx?.type)
-  }, [fbx])
   
   // Clone and setup FBX model
   useEffect(() => {
-    if (fbx) {
+    if (fbx && !fbxClone.current) {
       console.log("FBX loaded, setting up model...")
       const clonedFbx = fbx.clone()
       
@@ -80,7 +74,6 @@ function CarMesh({ animationState }: { animationState: AnimationState }) {
           child.receiveShadow = true
           
           const mesh = child as THREE.Mesh
-          console.log("Found mesh in FBX:", mesh.name)
           
           // Optimize materials for WebGPU/WebGL rendering
           if (mesh.material) {
@@ -125,8 +118,8 @@ function CarMesh({ animationState }: { animationState: AnimationState }) {
       })
       
       fbxClone.current = clonedFbx
-      modelLoaded.current = true
-      console.log("FBX model setup complete!")
+      setIsModelReady(true)
+      console.log("✅ FBX model ready to render!")
     }
   }, [fbx])
   
@@ -156,21 +149,14 @@ function CarMesh({ animationState }: { animationState: AnimationState }) {
     }
   })
 
+  // Don't render anything until model is ready (prevents box flash on load)
+  if (!isModelReady || !fbxClone.current) {
+    return null // Let Suspense handle the loading state
+  }
+
   return (
     <group ref={meshRef}>
-      {fbxClone.current ? (
-        <primitive object={fbxClone.current} />
-      ) : (
-        // Fallback visible geometry while loading or if FBX fails
-        <group>
-          <Box ref={fallbackRef} args={[2, 0.8, 4]} castShadow receiveShadow>
-            <meshStandardMaterial color="#3b82f6" />
-          </Box>
-          <Box args={[1.8, 0.6, 2]} position={[0, 0.5, 0]} castShadow>
-            <meshStandardMaterial color="#87ceeb" transparent opacity={0.7} />
-          </Box>
-        </group>
-      )}
+      <primitive object={fbxClone.current} />
     </group>
   )
 }
@@ -296,7 +282,11 @@ function OboCarScene() {
         {/* Custom invisible collider for physics - positioned at bottom of car */}
         <CuboidCollider args={[1, 0.5, 2]} position={[0, 0, 0]} />
         
-        <CarMesh animationState={animationState} />
+        {/* Wrap CarMesh in its own Suspense to prevent fallback box flash */}
+        <Suspense fallback={null}>
+          <CarMesh animationState={animationState} />
+        </Suspense>
+        
         <SensorVisualization />
       </RigidBody>
 
@@ -399,6 +389,9 @@ function calculateSensorDistance(
 
   return Math.max(0, minDistance)
 }
+
+// Preload the FBX model to prevent loading delays
+useFBX.preload("/models/OBOCAR.fbx")
 
 // Export the component
 export { OboCarScene }
