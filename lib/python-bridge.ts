@@ -54,49 +54,18 @@ class OboCarBridge {
       
       registerLoopCallback: (callback: () => boolean | void) => {
         // Register a callback to be called periodically by the animation loop
+        // NOTE: The callback should already be a persistent proxy created by Python's create_proxy()
         console.log('🔄 Bridge: Registering event loop callback')
+        console.log('🔍 Bridge: Callback type:', typeof callback);
         console.log('🔍 Bridge: Initial store state:', {
           isRunning: useSimulationStore.getState().isRunning,
           commandQueue: useSimulationStore.getState().commandQueue.length,
           activeLoops: useSimulationStore.getState().activeLoops.length
         });
         
-        // Create a persistent proxy to prevent Pyodide from destroying the callback
-        let persistentCallback: any;
-        console.log('🔍 Bridge: window available:', typeof window !== 'undefined');
-        console.log('🔍 Bridge: pyodideInstance available:', !!(window as any).pyodideInstance);
-        
-        try {
-          // Check if pyodide is available and has create_proxy
-          if (typeof window !== 'undefined' && (window as any).pyodideInstance) {
-            const pyodide = (window as any).pyodideInstance;
-            console.log('🔍 Bridge: pyodide.create_proxy available:', !!pyodide.create_proxy);
-            console.log('🔍 Bridge: pyodide.create_once_callable available:', !!pyodide.create_once_callable);
-            
-            if (pyodide.create_proxy) {
-              console.log('🔄 Bridge: Creating persistent proxy for callback');
-              persistentCallback = pyodide.create_proxy(callback);
-              console.log('✅ Bridge: Persistent proxy created successfully');
-              console.log('🔍 Bridge: Proxy type:', typeof persistentCallback);
-            } else if (pyodide.create_once_callable) {
-              console.log('🔄 Bridge: Using create_once_callable as fallback');
-              // For create_once_callable, we'll need to recreate it each time
-              persistentCallback = callback; // We'll handle this differently
-            } else {
-              console.log('⚠️ Bridge: Neither create_proxy nor create_once_callable available, using callback directly');
-              persistentCallback = callback;
-            }
-          } else {
-            console.log('⚠️ Bridge: Pyodide not available, using callback directly');
-            persistentCallback = callback;
-          }
-        } catch (error) {
-          console.log('⚠️ Bridge: Failed to create proxy, using callback directly:', error);
-          persistentCallback = callback;
-        }
-        
-        console.log('🔍 Bridge: Final persistentCallback type:', typeof persistentCallback);
-        console.log('🔍 Bridge: Final persistentCallback === callback:', persistentCallback === callback);
+        // Use the callback directly - it should already be wrapped with create_proxy on the Python side
+        const persistentCallback: any = callback; // Use 'any' to allow .destroy() call
+        console.log('✅ Bridge: Using callback directly (should be pre-wrapped with create_proxy from Python)');
         
         // Ensure the simulation is running
         const store = useSimulationStore.getState();
@@ -109,6 +78,10 @@ class OboCarBridge {
         let iterationCount = 0;
         const maxIterations = 10000;
         let isActive = true;
+        
+        // Create a simple interval ID for cleanup purposes BEFORE using it in executeLoopIteration
+        // This prevents "Cannot access 'id' before initialization" error
+        const id = Date.now() + Math.random(); // Use timestamp with random for uniqueness
         
         // Function to directly execute the next loop iteration
         const executeLoopIteration = () => {
@@ -198,10 +171,7 @@ class OboCarBridge {
         console.log('🔄 Bridge: Starting first iteration immediately');
         executeLoopIteration();
         
-        // Create a simple interval ID for cleanup purposes (not used for loop continuation)
-        const id = Date.now() + Math.random(); // Use timestamp with random for uniqueness
-        
-        // Register the loop with the store
+        // Register the loop with the store (id was already declared earlier to avoid temporal dead zone)
         useSimulationStore.getState().registerEventLoop(id as unknown as NodeJS.Timeout)
         console.log(`🔄 Bridge: Event loop registered. Active loops count: ${useSimulationStore.getState().activeLoops.length}`);
         

@@ -13,6 +13,121 @@ try:
 except:
     pass
 
+# ============================================================================
+# HELPER CLASSES FOR LOOP VARIABLES
+# ============================================================================
+
+class Counter:
+    """
+    A counter class that works properly in event-driven loops.
+    
+    In the event-driven system, regular variables (like i = 0) don't persist
+    across loop iterations because each iteration runs in a new scope.
+    This Counter class provides a cleaner way to track values.
+    
+    Usage:
+        count = Counter()  # starts at 0
+        count = Counter(5)  # starts at 5
+        
+        def loop_step():
+            count.increment()  # or count += 1
+            print(f"Iteration {count.value}")
+            return count.value < 10
+    """
+    def __init__(self, initial_value=0):
+        self.value = initial_value
+    
+    def increment(self, amount=1):
+        """Increase the counter by amount (default 1)"""
+        self.value += amount
+        return self.value
+    
+    def decrement(self, amount=1):
+        """Decrease the counter by amount (default 1)"""
+        self.value -= amount
+        return self.value
+    
+    def reset(self, value=0):
+        """Reset counter to a specific value"""
+        self.value = value
+        return self.value
+    
+    def __int__(self):
+        return int(self.value)
+    
+    def __float__(self):
+        return float(self.value)
+    
+    def __str__(self):
+        return str(self.value)
+    
+    def __repr__(self):
+        return f"Counter({self.value})"
+    
+    # Support += and -= operators
+    def __iadd__(self, other):
+        self.value += other
+        return self
+    
+    def __isub__(self, other):
+        self.value -= other
+        return self
+    
+    # Comparison operators
+    def __lt__(self, other):
+        return self.value < (other.value if isinstance(other, Counter) else other)
+    
+    def __le__(self, other):
+        return self.value <= (other.value if isinstance(other, Counter) else other)
+    
+    def __gt__(self, other):
+        return self.value > (other.value if isinstance(other, Counter) else other)
+    
+    def __ge__(self, other):
+        return self.value >= (other.value if isinstance(other, Counter) else other)
+    
+    def __eq__(self, other):
+        return self.value == (other.value if isinstance(other, Counter) else other)
+    
+    def __ne__(self, other):
+        return self.value != (other.value if isinstance(other, Counter) else other)
+
+
+class Variable:
+    """
+    A generic variable container that works in event-driven loops.
+    
+    Usage:
+        distance = Variable(0.5)
+        turn_right = Variable(True)
+        
+        def loop_step():
+            distance.value += 0.5
+            turn_right.value = not turn_right.value
+    """
+    def __init__(self, initial_value):
+        self.value = initial_value
+    
+    def set(self, value):
+        """Set a new value"""
+        self.value = value
+        return self.value
+    
+    def get(self):
+        """Get current value"""
+        return self.value
+    
+    def __str__(self):
+        return str(self.value)
+    
+    def __repr__(self):
+        return f"Variable({self.value})"
+
+
+# ============================================================================
+# MAIN CAR CLASS
+# ============================================================================
+
 class OboCar:
     """
     Main vehicle class for Obo Car simulation.
@@ -310,8 +425,19 @@ class OboCar:
             # Make sure car is ready for movement
             if hasattr(window, 'eventBus'):
                 window.eventBus.emit('simulation:state:change', True)
+            
+            # Create a persistent proxy for the step function to prevent it from being destroyed
+            # This is CRITICAL: without create_proxy, Pyodide will destroy the function after first call
+            try:
+                from pyodide.ffi import create_proxy
+                step_function_proxy = create_proxy(step_function)
+                print("✅ Created persistent proxy for step_function")
+            except ImportError:
+                # Fallback if create_proxy is not available
+                print("⚠️ create_proxy not available, using step_function directly")
+                step_function_proxy = step_function
                 
-            loop_id = window.oboCarAPI.registerLoopCallback(step_function)
+            loop_id = window.oboCarAPI.registerLoopCallback(step_function_proxy)
             print(f"✅ Event loop started with ID: {loop_id}")
             return loop_id
         except Exception as e:
