@@ -1,9 +1,10 @@
 "use client"
 
-import { Suspense, useEffect } from "react"
+import { Suspense, useEffect, useState } from "react"
 import { Canvas } from "@react-three/fiber"
 import { OrbitControls, Environment, Grid } from "@react-three/drei"
 import { Physics } from "@react-three/rapier"
+import * as THREE from "three"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Zap, Play } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -15,6 +16,19 @@ import { useCommandExecutor, usePythonCodeParser } from "@/hooks/use-command-exe
 import { oboCarBridge } from "@/lib/python-bridge"
 
 export default function OboPlayground() {
+  const [useWebGPU, setUseWebGPU] = useState(false)
+  
+  // Check WebGPU support on mount
+  useEffect(() => {
+    if (typeof navigator !== 'undefined' && 'gpu' in navigator) {
+      console.log("WebGPU is supported!")
+      setUseWebGPU(true)
+    } else {
+      console.log("WebGPU not supported, using WebGL")
+      setUseWebGPU(false)
+    }
+  }, [])
+  
   const {
     currentCode,
     setCurrentCode,
@@ -122,6 +136,9 @@ export default function OboPlayground() {
                 <CardTitle className="flex items-center gap-2">
                   <Zap className="w-5 h-5" />
                   3D Simulation
+                  <span className="ml-2 text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary">
+                    {useWebGPU ? "WebGPU" : "WebGL"}
+                  </span>
                   {executionError && (
                     <span className="ml-2 text-red-500 text-sm">Error</span>
                   )}
@@ -145,10 +162,39 @@ export default function OboPlayground() {
                   <Canvas
                     camera={{ position: [10, 8, 10], fov: 60 }}
                     shadows
-                    style={{ width: "100%", height: "100%" }}
+                    style={{ width: "100%", height: "100%", background: "#1a1a1a" }}
+                    gl={useWebGPU ? {
+                      // WebGPU configuration
+                      powerPreference: "high-performance",
+                    } : {
+                      // WebGL configuration
+                      antialias: true,
+                      alpha: false,
+                      stencil: false,
+                      depth: true,
+                      logarithmicDepthBuffer: true,
+                      toneMapping: THREE.ACESFilmicToneMapping,
+                      toneMappingExposure: 1.2,
+                      powerPreference: "high-performance",
+                      preserveDrawingBuffer: true
+                    }}
+                    dpr={[1, 2]}
+                    performance={{ min: 0.5 }}
                   >
-                    <ambientLight intensity={0.4} />
-                    <directionalLight position={[10, 20, 10]} intensity={1} castShadow />
+                    <color attach="background" args={["#1a1a1a"]} />
+                    {useWebGPU && (
+                      <primitive object={new THREE.Color("#1a1a1a")} attach="background" />
+                    )}
+                    <ambientLight intensity={0.5} />
+                    <directionalLight position={[10, 20, 10]} intensity={1.2} castShadow 
+                      shadow-mapSize={[2048, 2048]}
+                      shadow-camera-far={50}
+                      shadow-camera-left={-20}
+                      shadow-camera-right={20}
+                      shadow-camera-top={20}
+                      shadow-camera-bottom={-20}
+                    />
+                    <hemisphereLight intensity={0.3} groundColor="#444444" />
                     
                     <Physics gravity={[0, -9.81, 0]}>
                       <OboCarScene key="obo-car-scene-stable" />
@@ -161,9 +207,13 @@ export default function OboPlayground() {
                       maxPolarAngle={Math.PI / 2}
                       minDistance={5}
                       maxDistance={50}
+                      enableDamping
+                      dampingFactor={0.05}
                     />
                     
-                    <Grid args={[20, 20]} cellSize={1} sectionSize={5} />
+                    {/* Simple visible grid */}
+                    <gridHelper args={[50, 50, "#00aaff", "#666666"]} position={[0, 0, 0]} />
+                    
                     <Environment preset="night" />
                   </Canvas>
                 </Suspense>

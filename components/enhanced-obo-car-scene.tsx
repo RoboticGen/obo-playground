@@ -73,7 +73,7 @@ function CarMesh({ animationState }: { animationState: AnimationState }) {
       clonedFbx.position.sub(center)
       clonedFbx.position.y = 0 // Keep on ground
       
-      // Set up materials - preserve original colors
+      // Set up materials - preserve original colors and fix thin parts visibility
       clonedFbx.traverse((child) => {
         if ((child as THREE.Mesh).isMesh) {
           child.castShadow = true
@@ -83,21 +83,26 @@ function CarMesh({ animationState }: { animationState: AnimationState }) {
           console.log("Found mesh in FBX:", mesh.name)
           
           // Keep original materials and colors from the FBX file
-          // Just ensure they have proper lighting properties if needed
+          // Enable double-sided rendering to fix thin parts disappearing
           if (mesh.material) {
             if (Array.isArray(mesh.material)) {
               mesh.material.forEach(mat => {
-                // Don't change color, just update if it's a standard material
-                if ((mat as THREE.MeshStandardMaterial).isMeshStandardMaterial) {
-                  mat.needsUpdate = true
-                }
+                const material = mat as THREE.MeshStandardMaterial
+                // Enable double-sided rendering for thin parts
+                material.side = THREE.DoubleSide
+                // Disable backface culling
+                material.depthWrite = true
+                material.depthTest = true
+                material.needsUpdate = true
               })
             } else {
-              const material = mesh.material as any
-              // Keep original colors, just ensure it updates
-              if (material.isMeshStandardMaterial) {
-                material.needsUpdate = true
-              }
+              const material = mesh.material as THREE.MeshStandardMaterial
+              // Enable double-sided rendering for thin parts
+              material.side = THREE.DoubleSide
+              // Disable backface culling
+              material.depthWrite = true
+              material.depthTest = true
+              material.needsUpdate = true
             }
           }
         }
