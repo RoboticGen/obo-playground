@@ -82,28 +82,44 @@ function CarMesh({ animationState }: { animationState: AnimationState }) {
           const mesh = child as THREE.Mesh
           console.log("Found mesh in FBX:", mesh.name)
           
-          // Keep original materials and colors from the FBX file
-          // Enable double-sided rendering to fix thin parts disappearing
+          // Optimize materials for WebGPU/WebGL rendering
           if (mesh.material) {
             if (Array.isArray(mesh.material)) {
               mesh.material.forEach(mat => {
                 const material = mat as THREE.MeshStandardMaterial
                 // Enable double-sided rendering for thin parts
                 material.side = THREE.DoubleSide
-                // Disable backface culling
                 material.depthWrite = true
                 material.depthTest = true
+                
+                // Optimize material properties for better rendering
+                material.metalness = material.metalness ?? 0.1
+                material.roughness = material.roughness ?? 0.7
+                material.envMapIntensity = 1.0
+                
                 material.needsUpdate = true
               })
             } else {
               const material = mesh.material as THREE.MeshStandardMaterial
               // Enable double-sided rendering for thin parts
               material.side = THREE.DoubleSide
-              // Disable backface culling
               material.depthWrite = true
               material.depthTest = true
+              
+              // Optimize material properties for better rendering
+              material.metalness = material.metalness ?? 0.1
+              material.roughness = material.roughness ?? 0.7
+              material.envMapIntensity = 1.0
+              
               material.needsUpdate = true
             }
+          }
+          
+          // Optimize geometry for better performance
+          if (mesh.geometry) {
+            mesh.geometry.computeVertexNormals()
+            mesh.geometry.computeBoundingSphere()
+            mesh.geometry.computeBoundingBox()
           }
         }
       })
@@ -142,8 +158,8 @@ function CarMesh({ animationState }: { animationState: AnimationState }) {
 
   return (
     <group ref={meshRef}>
-      {fbx ? (
-        <primitive object={fbx} scale={0.025} rotation={[0, -Math.PI / 2, 0]} position={[0, 0, 0]} />
+      {fbxClone.current ? (
+        <primitive object={fbxClone.current} />
       ) : (
         // Fallback visible geometry while loading or if FBX fails
         <group>

@@ -1,6 +1,6 @@
 "use client"
 
-import { Suspense, useEffect } from "react"
+import { Suspense, useEffect, useState } from "react"
 import { Canvas } from "@react-three/fiber"
 import { OrbitControls, Environment, Grid } from "@react-three/drei"
 import { Physics } from "@react-three/rapier"
@@ -16,6 +16,8 @@ import { useCommandExecutor, usePythonCodeParser } from "@/hooks/use-command-exe
 import { oboCarBridge } from "@/lib/python-bridge"
 
 export default function OboPlayground() {
+  const [useWebGPU, setUseWebGPU] = useState(false)
+  const [rendererReady, setRendererReady] = useState(false)
   const {
     currentCode,
     setCurrentCode,
@@ -27,6 +29,39 @@ export default function OboPlayground() {
 
   const { startExecution } = useCommandExecutor()
   const { executeCode, validatePythonSyntax } = usePythonCodeParser()
+
+  // Check WebGPU availability
+  useEffect(() => {
+    const checkWebGPU = async () => {
+      if (typeof window !== 'undefined') {
+        // Check if WebGPU is available
+        const isAvailable = !!(navigator.gpu)
+        
+        if (isAvailable) {
+          try {
+            const adapter = await navigator.gpu?.requestAdapter()
+            if (adapter) {
+              console.log('✅ WebGPU Available - Using WebGPU Renderer')
+              setUseWebGPU(true)
+            } else {
+              console.log('⚠️ WebGPU not available - Falling back to WebGL')
+              setUseWebGPU(false)
+            }
+          } catch (error) {
+            console.log('⚠️ WebGPU error - Falling back to WebGL:', error)
+            setUseWebGPU(false)
+          }
+        } else {
+          console.log('⚠️ WebGPU not supported - Using WebGL')
+          setUseWebGPU(false)
+        }
+        
+        setRendererReady(true)
+      }
+    }
+    
+    checkWebGPU()
+  }, [])
 
   const handleExecuteCode = async () => {
     if (!currentCode.trim()) return
@@ -123,6 +158,9 @@ export default function OboPlayground() {
                 <CardTitle className="flex items-center gap-2">
                   <Zap className="w-5 h-5" />
                   3D Simulation
+                  <span className={`text-xs px-2 py-1 rounded font-normal ${useWebGPU ? 'bg-green-600 text-white' : 'bg-blue-600 text-white'}`}>
+                    {useWebGPU ? '⚡ WebGPU' : 'WebGL'}
+                  </span>
                   {executionError && (
                     <span className="ml-2 text-red-500 text-sm">Error</span>
                   )}
@@ -143,6 +181,7 @@ export default function OboPlayground() {
                     </div>
                   }
                 >
+                  {rendererReady ? (
                   <Canvas
                     camera={{ position: [10, 8, 10], fov: 60 }}
                     shadows
@@ -152,14 +191,27 @@ export default function OboPlayground() {
                       alpha: false,
                       stencil: false,
                       depth: true,
-                      logarithmicDepthBuffer: true,
+                      logarithmicDepthBuffer: !useWebGPU, // WebGPU handles this differently
                       toneMapping: THREE.ACESFilmicToneMapping,
                       toneMappingExposure: 1.2,
                       powerPreference: "high-performance",
-                      preserveDrawingBuffer: true
+                      preserveDrawingBuffer: false, // Better performance
+                      failIfMajorPerformanceCaveat: false
                     }}
                     dpr={[1, 2]}
                     performance={{ min: 0.5 }}
+                    onCreated={({ gl }) => {
+                      // Configure renderer based on WebGPU or WebGL
+                      if (useWebGPU) {
+                        console.log('🚀 Canvas created with WebGPU support')
+                      } else {
+                        console.log('🎨 Canvas created with WebGL')
+                        gl.shadowMap.enabled = true
+                        gl.shadowMap.type = THREE.PCFSoftShadowMap
+                      }
+                      gl.toneMapping = THREE.ACESFilmicToneMapping
+                      gl.toneMappingExposure = 1.2
+                    }}
                   >
                     <color attach="background" args={["#1a1a1a"]} />
                     <ambientLight intensity={0.5} />
@@ -193,6 +245,11 @@ export default function OboPlayground() {
                     
                     <Environment preset="night" />
                   </Canvas>
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center bg-[#1a1a1a]">
+                      <div className="text-white">Initializing Renderer...</div>
+                    </div>
+                  )}
                 </Suspense>
               </CardContent>
             </Card>
