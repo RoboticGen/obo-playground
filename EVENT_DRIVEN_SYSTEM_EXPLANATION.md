@@ -380,7 +380,7 @@ Commands don't block Python execution:
 ```python
 # These all queue up instantly
 car.forward(1)   # Added to queue
-car.turn_left(90)  # Added to queue
+car.left(90)  # Added to queue
 car.forward(2)   # Added to queue
 
 # Python continues immediately
@@ -408,7 +408,7 @@ Commands execute in sequence automatically:
 
 ```python
 car.forward(1)    # Command 1
-car.turn_left(90) # Command 2 waits for 1
+car.left(90) # Command 2 waits for 1
 car.forward(2)    # Command 3 waits for 2
 ```
 
