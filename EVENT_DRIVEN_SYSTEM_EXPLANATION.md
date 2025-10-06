@@ -504,9 +504,9 @@ while car.distance() < 10:
 ### Workflow 3: Complex Sequence
 ```python
 car.forward(2)
-car.turn_left(90)
+car.left(90)
 car.forward(3)
-car.turn_right(45)
+car.right(45)
 car.backward(1)
 ```
 → All commands queued → Execute sequentially → Each completes fully
