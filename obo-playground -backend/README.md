@@ -1,98 +1,227 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# OBO Playground Backend
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+A robust NestJS-based REST API for managing robotics playground projects with PostgreSQL database integration.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+## 🚀 Features
 
-## Description
+- ✅ **RESTful API** - CRUD operations for projects
+- ✅ **PostgreSQL Database** - TypeORM with migrations
+- ✅ **Swagger Documentation** - Interactive API docs at `/api/docs`
+- ✅ **Health Checks** - Application health monitoring at `/health`
+- ✅ **Input Validation** - class-validator with detailed error messages
+- ✅ **Exception Handling** - Global exception filter with structured errors
+- ✅ **Request Logging** - Comprehensive request/response logging
+- ✅ **Security** - Helmet middleware for security headers
+- ✅ **Compression** - Response compression for better performance
+- ✅ **CORS** - Configurable cross-origin resource sharing
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+## 📋 Prerequisites
 
-## Project setup
+- Node.js (v18 or higher)
+- PostgreSQL (v14 or higher)
+- npm or yarn
 
+## 🔧 Installation
+
+1. **Clone the repository**
+   ```bash
+   git clone <repository-url>
+   cd obo-playground-backend
+   ```
+
+2. **Install dependencies**
+   ```bash
+   npm install
+   ```
+
+3. **Configure environment variables**
+   ```bash
+   cp .env.example .env
+   ```
+   
+   Edit `.env` file with your configuration:
+   ```env
+   DB_HOST=localhost
+   DB_PORT=5432
+   DB_USERNAME=your_username
+   DB_PASSWORD=your_password
+   DB_DATABASE=obo_playground
+   NODE_ENV=development
+   PORT=3000
+   CORS_ORIGIN=*
+   ```
+
+4. **Start PostgreSQL with Docker (optional)**
+   ```bash
+   docker-compose up -d
+   ```
+
+5. **Run migrations**
+   ```bash
+   npm run migration:run
+   ```
+
+## 🚦 Running the Application
+
+### Development Mode
 ```bash
-$ npm install
+npm run start:dev
 ```
 
-## Compile and run the project
-
+### Production Mode
 ```bash
-# development
-$ npm run start
-
-# watch mode
-$ npm run start:dev
-
-# production mode
-$ npm run start:prod
+npm run build
+npm run start:prod
 ```
 
-## Run tests
-
+### Debug Mode
 ```bash
-# unit tests
-$ npm run test
-
-# e2e tests
-$ npm run test:e2e
-
-# test coverage
-$ npm run test:cov
+npm run start:debug
 ```
 
-## Deployment
+The application will be available at:
+- **API**: http://localhost:3000
+- **Swagger Docs**: http://localhost:3000/api/docs
+- **Health Check**: http://localhost:3000/health
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
+## 📚 API Endpoints
 
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+### Projects
 
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/projects` | Create a new project |
+| GET | `/projects` | Get all projects |
+| GET | `/projects?userId={uuid}` | Get projects by user ID |
+| GET | `/projects/:id` | Get a project by ID |
+| PATCH | `/projects/:id` | Update a project |
+| DELETE | `/projects/:id` | Delete a project |
+
+### Health
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/health` | Comprehensive health check |
+| GET | `/health/ping` | Simple ping check |
+
+## 🗃️ Database
+
+### Migrations
+
+**Generate a new migration**
 ```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
+npm run migration:generate -- src/migrations/MigrationName
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+**Run migrations**
+```bash
+npm run migration:run
+```
 
-## Resources
+**Revert last migration**
+```bash
+npm run migration:revert
+```
 
-Check out a few resources that may come in handy when working with NestJS:
+## 🧪 Testing
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+```bash
+# Unit tests
+npm run test
 
-## Support
+# E2E tests
+npm run test:e2e
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+# Test coverage
+npm run test:cov
 
-## Stay in touch
+# Watch mode
+npm run test:watch
+```
 
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+## 🔒 Security Features
 
-## License
+- **Helmet** - Security headers middleware
+- **CORS** - Configurable cross-origin requests
+- **Input Validation** - Automatic validation with detailed errors
+- **UUID Validation** - Route parameter validation
+- **SQL Injection Protection** - TypeORM parameterized queries
 
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+## 📊 Monitoring
+
+The application includes comprehensive logging:
+
+- Request/response logging
+- Error tracking with stack traces
+- Performance metrics (response time)
+- Database query logging (development mode)
+
+## 🏗️ Project Structure
+
+```
+src/
+├── common/
+│   ├── filters/
+│   │   └── http-exception.filter.ts    # Global exception handling
+│   └── interceptors/
+│       ├── logging.interceptor.ts       # Request/response logging
+│       └── transform.interceptor.ts     # Response transformation
+├── entities/
+│   └── project.entity.ts                # Project entity
+├── health/
+│   ├── health.controller.ts             # Health check endpoints
+│   └── health.module.ts
+├── migrations/
+│   └── CreateProjectsTable.ts           # Database migrations
+├── projects/
+│   ├── dto/
+│   │   ├── create-project.dto.ts        # Create project DTO
+│   │   └── update-project.dto.ts        # Update project DTO
+│   ├── projects.controller.ts           # Projects controller
+│   ├── projects.module.ts
+│   └── projects.service.ts              # Projects business logic
+├── app.module.ts                        # Root module
+├── data-source.ts                       # TypeORM CLI config
+└── main.ts                              # Application entry point
+```
+
+## 🐳 Docker
+
+Start the PostgreSQL database:
+```bash
+docker-compose up -d
+```
+
+Stop the database:
+```bash
+docker-compose down
+```
+
+## 🔄 Development Workflow
+
+1. Make changes to your code
+2. The application auto-reloads in watch mode
+3. Check logs for any errors
+4. Test endpoints using Swagger UI
+5. Run tests before committing
+
+## 🤝 Best Practices Implemented
+
+- ✅ Dependency injection
+- ✅ Service-repository pattern
+- ✅ DTO validation
+- ✅ Global exception handling
+- ✅ Structured logging
+- ✅ Health checks
+- ✅ API documentation
+- ✅ Database migrations
+- ✅ Environment configuration
+- ✅ Security middleware
+
+## 📝 License
+
+This project is licensed under the UNLICENSED license.
+
+## 🆘 Support
+
+For issues and questions, please open an issue in the repository.

@@ -4,6 +4,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { ProjectsModule } from './projects/projects.module';
+import { HealthModule } from './health/health.module';
 
 @Module({
   imports: [
@@ -24,9 +25,11 @@ import { ProjectsModule } from './projects/projects.module';
         entities: [__dirname + '/**/*.entity{.ts,.js}'],
         migrations: [__dirname + '/migrations/*{.ts,.js}'],
         synchronize: false,
+        logging: configService.get('NODE_ENV') === 'development',
       }),
     }),
     ProjectsModule,
+    HealthModule,
   ],
   controllers: [AppController],
   providers: [AppService],
