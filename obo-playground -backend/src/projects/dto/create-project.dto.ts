@@ -11,13 +11,20 @@ export class CreateProjectDto {
   user_id: string;
 
   @ApiProperty({
-    description: 'File path where the project is stored',
-    example: '/projects/user123/robotics-project.py',
-    maxLength: 500,
+    description: 'Name of the project',
+    example: 'My Robotics Project',
+    maxLength: 255,
   })
   @IsString()
-  @MaxLength(500)
-  file_path: string;
+  @MaxLength(255)
+  project_name: string;
+
+  @ApiProperty({
+    description: 'ID of the 3D environment for running simulations',
+    example: 1,
+  })
+  @IsString()
+  environment_id: number;
 
   @ApiPropertyOptional({
     description: 'Optional assignment identifier',

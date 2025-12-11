@@ -1,5 +1,6 @@
 export declare class CreateProjectDto {
     user_id: string;
-    file_path: string;
+    project_name: string;
+    environment_id: number;
     assignment_id?: string;
 }

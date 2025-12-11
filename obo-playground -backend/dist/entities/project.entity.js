@@ -12,9 +12,13 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.Project = void 0;
 const typeorm_1 = require("typeorm");
 const swagger_1 = require("@nestjs/swagger");
+const environment_entity_1 = require("./environment.entity");
 let Project = class Project {
     project_id;
     user_id;
+    project_name;
+    environment_id;
+    environment;
     file_path;
     assignment_id;
     created_at;
@@ -41,8 +45,30 @@ __decorate([
 ], Project.prototype, "user_id", void 0);
 __decorate([
     (0, swagger_1.ApiProperty)({
+        description: 'Name of the project',
+        example: 'My Robotics Project',
+        maxLength: 255,
+    }),
+    (0, typeorm_1.Column)({ type: 'varchar', length: 255 }),
+    __metadata("design:type", String)
+], Project.prototype, "project_name", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        description: 'Foreign key to the environment',
+        example: 1,
+    }),
+    (0, typeorm_1.Column)({ type: 'integer' }),
+    __metadata("design:type", Number)
+], Project.prototype, "environment_id", void 0);
+__decorate([
+    (0, typeorm_1.ManyToOne)(() => environment_entity_1.Environment, (environment) => environment.projects, { eager: true }),
+    (0, typeorm_1.JoinColumn)({ name: 'environment_id' }),
+    __metadata("design:type", environment_entity_1.Environment)
+], Project.prototype, "environment", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
         description: 'File path where the project is stored',
-        example: '/projects/user123/robotics-project.py',
+        example: 'Project_files/123e4567-e89b-12d3-a456-426614174000/my-project.py',
         maxLength: 500,
     }),
     (0, typeorm_1.Column)({ type: 'varchar', length: 500 }),

@@ -5,6 +5,7 @@ import { UpdateProjectDto } from './dto/update-project.dto';
 export declare class ProjectsService {
     private readonly projectRepository;
     private readonly logger;
+    private readonly projectFilesDir;
     constructor(projectRepository: Repository<Project>);
     create(createProjectDto: CreateProjectDto): Promise<Project>;
     findAll(): Promise<Project[]>;

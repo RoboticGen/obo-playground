@@ -1,10 +1,43 @@
 "use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
     if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
     else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
     return c > 3 && r && Object.defineProperty(target, key, r), r;
 };
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
@@ -18,16 +51,48 @@ const common_1 = require("@nestjs/common");
 const typeorm_1 = require("@nestjs/typeorm");
 const typeorm_2 = require("typeorm");
 const project_entity_1 = require("../entities/project.entity");
+const fs = __importStar(require("fs"));
+const path = __importStar(require("path"));
 let ProjectsService = ProjectsService_1 = class ProjectsService {
     projectRepository;
     logger = new common_1.Logger(ProjectsService_1.name);
+    projectFilesDir = path.join(process.cwd(), 'Project_files');
     constructor(projectRepository) {
         this.projectRepository = projectRepository;
     }
     async create(createProjectDto) {
         try {
             this.logger.log(`Creating new project for user: ${createProjectDto.user_id}`);
-            const project = this.projectRepository.create(createProjectDto);
+            const sanitizedProjectName = createProjectDto.project_name
+                .replace(/[^a-zA-Z0-9-_\s]/g, '')
+                .replace(/\s+/g, '-')
+                .toLowerCase();
+            const userDir = path.join(this.projectFilesDir, createProjectDto.user_id);
+            const fileName = `${sanitizedProjectName}.py`;
+            const filePath = path.join('Project_files', createProjectDto.user_id, fileName);
+            const fullFilePath = path.join(this.projectFilesDir, createProjectDto.user_id, fileName);
+            if (!fs.existsSync(userDir)) {
+                fs.mkdirSync(userDir, { recursive: true });
+                this.logger.log(`Created user directory: ${userDir}`);
+            }
+            const pythonTemplate = `# ${createProjectDto.project_name}
+# 3D Environment ID: ${createProjectDto.environment_id}
+# Created: ${new Date().toISOString()}
+
+def main():
+    """Main function for ${createProjectDto.project_name}"""
+    print("Starting ${createProjectDto.project_name}")
+    # Add your 3D simulation code here
+
+if __name__ == "__main__":
+    main()
+`;
+            fs.writeFileSync(fullFilePath, pythonTemplate, 'utf8');
+            this.logger.log(`Created Python file: ${fullFilePath}`);
+            const project = this.projectRepository.create({
+                ...createProjectDto,
+                file_path: filePath,
+            });
             const savedProject = await this.projectRepository.save(project);
             this.logger.log(`Project created successfully: ${savedProject.project_id}`);
             return savedProject;

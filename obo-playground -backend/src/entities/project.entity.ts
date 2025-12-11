@@ -1,5 +1,6 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, ManyToOne, JoinColumn } from 'typeorm';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Environment } from './environment.entity';
 
 @Entity('projects')
 export class Project {
@@ -20,8 +21,27 @@ export class Project {
   user_id: string;
 
   @ApiProperty({
+    description: 'Name of the project',
+    example: 'My Robotics Project',
+    maxLength: 255,
+  })
+  @Column({ type: 'varchar', length: 255 })
+  project_name: string;
+
+  @ApiProperty({
+    description: 'Foreign key to the environment',
+    example: 1,
+  })
+  @Column({ type: 'integer' })
+  environment_id: number;
+
+  @ManyToOne(() => Environment, (environment) => environment.projects, { eager: true })
+  @JoinColumn({ name: 'environment_id' })
+  environment: Environment;
+
+  @ApiProperty({
     description: 'File path where the project is stored',
-    example: '/projects/user123/robotics-project.py',
+    example: 'Project_files/123e4567-e89b-12d3-a456-426614174000/my-project.py',
     maxLength: 500,
   })
   @Column({ type: 'varchar', length: 500 })

@@ -12,8 +12,25 @@ export class UpdateProjectDto {
   user_id?: string;
 
   @ApiPropertyOptional({
+    description: 'Name of the project',
+    example: 'My Robotics Project',
+    maxLength: 255,
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  project_name?: string;
+
+  @ApiPropertyOptional({
+    description: 'ID of the 3D environment for running simulations',
+    example: 1,
+  })
+  @IsOptional()
+  environment_id?: number;
+
+  @ApiPropertyOptional({
     description: 'File path where the project is stored',
-    example: '/projects/user123/robotics-project.py',
+    example: 'Project_files/123e4567-e89b-12d3-a456-426614174000/my-project.py',
     maxLength: 500,
   })
   @IsOptional()

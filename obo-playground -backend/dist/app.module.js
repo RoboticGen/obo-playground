@@ -13,6 +13,7 @@ const typeorm_1 = require("@nestjs/typeorm");
 const app_controller_1 = require("./app.controller");
 const app_service_1 = require("./app.service");
 const projects_module_1 = require("./projects/projects.module");
+const environments_module_1 = require("./environments/environments.module");
 const health_module_1 = require("./health/health.module");
 let AppModule = class AppModule {
 };
@@ -41,6 +42,7 @@ exports.AppModule = AppModule = __decorate([
                 }),
             }),
             projects_module_1.ProjectsModule,
+            environments_module_1.EnvironmentsModule,
             health_module_1.HealthModule,
         ],
         controllers: [app_controller_1.AppController],

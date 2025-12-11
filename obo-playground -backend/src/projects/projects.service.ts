@@ -4,10 +4,13 @@ import { Repository } from 'typeorm';
 import { Project } from '../entities/project.entity';
 import { CreateProjectDto } from './dto/create-project.dto';
 import { UpdateProjectDto } from './dto/update-project.dto';
+import * as fs from 'fs';
+import * as path from 'path';
 
 @Injectable()
 export class ProjectsService {
   private readonly logger = new Logger(ProjectsService.name);
+  private readonly projectFilesDir = path.join(process.cwd(), 'Project_files');
 
   constructor(
     @InjectRepository(Project)
@@ -17,7 +20,45 @@ export class ProjectsService {
   async create(createProjectDto: CreateProjectDto): Promise<Project> {
     try {
       this.logger.log(`Creating new project for user: ${createProjectDto.user_id}`);
-      const project = this.projectRepository.create(createProjectDto);
+      
+      // Generate file path: Project_files/[user_id]/[project_name].py
+      const sanitizedProjectName = createProjectDto.project_name
+        .replace(/[^a-zA-Z0-9-_\s]/g, '')
+        .replace(/\s+/g, '-')
+        .toLowerCase();
+      const userDir = path.join(this.projectFilesDir, createProjectDto.user_id);
+      const fileName = `${sanitizedProjectName}.py`;
+      const filePath = path.join('Project_files', createProjectDto.user_id, fileName);
+      const fullFilePath = path.join(this.projectFilesDir, createProjectDto.user_id, fileName);
+      
+      // Create user directory if it doesn't exist
+      if (!fs.existsSync(userDir)) {
+        fs.mkdirSync(userDir, { recursive: true });
+        this.logger.log(`Created user directory: ${userDir}`);
+      }
+      
+      // Create Python file with template content
+      const pythonTemplate = `# ${createProjectDto.project_name}
+# 3D Environment ID: ${createProjectDto.environment_id}
+# Created: ${new Date().toISOString()}
+
+def main():
+    """Main function for ${createProjectDto.project_name}"""
+    print("Starting ${createProjectDto.project_name}")
+    # Add your 3D simulation code here
+
+if __name__ == "__main__":
+    main()
+`;
+      
+      fs.writeFileSync(fullFilePath, pythonTemplate, 'utf8');
+      this.logger.log(`Created Python file: ${fullFilePath}`);
+      
+      // Save project to database
+      const project = this.projectRepository.create({
+        ...createProjectDto,
+        file_path: filePath,
+      });
       const savedProject = await this.projectRepository.save(project);
       this.logger.log(`Project created successfully: ${savedProject.project_id}`);
       return savedProject;

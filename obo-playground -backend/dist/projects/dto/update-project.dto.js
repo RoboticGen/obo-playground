@@ -14,6 +14,8 @@ const class_validator_1 = require("class-validator");
 const swagger_1 = require("@nestjs/swagger");
 class UpdateProjectDto {
     user_id;
+    project_name;
+    environment_id;
     file_path;
     assignment_id;
 }
@@ -30,8 +32,27 @@ __decorate([
 ], UpdateProjectDto.prototype, "user_id", void 0);
 __decorate([
     (0, swagger_1.ApiPropertyOptional)({
+        description: 'Name of the project',
+        example: 'My Robotics Project',
+        maxLength: 255,
+    }),
+    (0, class_validator_1.IsOptional)(),
+    (0, class_validator_1.IsString)(),
+    (0, class_validator_1.MaxLength)(255),
+    __metadata("design:type", String)
+], UpdateProjectDto.prototype, "project_name", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
+        description: 'ID of the 3D environment for running simulations',
+        example: 1,
+    }),
+    (0, class_validator_1.IsOptional)(),
+    __metadata("design:type", Number)
+], UpdateProjectDto.prototype, "environment_id", void 0);
+__decorate([
+    (0, swagger_1.ApiPropertyOptional)({
         description: 'File path where the project is stored',
-        example: '/projects/user123/robotics-project.py',
+        example: 'Project_files/123e4567-e89b-12d3-a456-426614174000/my-project.py',
         maxLength: 500,
     }),
     (0, class_validator_1.IsOptional)(),
