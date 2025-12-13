@@ -43,6 +43,8 @@ __decorate([
         description: 'ID of the 3D environment for running simulations',
         example: 1,
     }),
+    (0, class_validator_1.IsInt)(),
+    (0, class_validator_1.IsPositive)(),
     __metadata("design:type", Number)
 ], CreateProjectDto.prototype, "environment_id", void 0);
 __decorate([

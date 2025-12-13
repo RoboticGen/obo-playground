@@ -43,7 +43,8 @@ export default function Home() {
         project_name: projectName,
         environment_id: environmentId,
       });
-      setProjects([newProject, ...projects]);
+      //setProjects([newProject, ...projects]);
+      await fetchProjects();
       setIsModalOpen(false);
     } catch (err) {
       setError('Failed to create project. Please try again.');
