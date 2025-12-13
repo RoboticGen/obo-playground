@@ -23,7 +23,6 @@ export class CreateProjectDto {
     description: 'ID of the 3D environment for running simulations',
     example: 1,
   })
-  @IsString()
   environment_id: number;
 
   @ApiPropertyOptional({
