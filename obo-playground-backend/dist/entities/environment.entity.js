@@ -17,7 +17,12 @@ let Environment = class Environment {
     environment_id;
     environment_name;
     environment_code;
+    description;
+    thumbnail;
     environment_path;
+    scene_config;
+    difficulty;
+    tags;
     is_active;
     created_at;
     updated_at;
@@ -35,7 +40,7 @@ __decorate([
 __decorate([
     (0, swagger_1.ApiProperty)({
         description: 'Name of the 3D simulation environment',
-        example: 'Unity 3D',
+        example: 'Basic Arena',
         maxLength: 100,
     }),
     (0, typeorm_1.Column)({ type: 'varchar', length: 100, unique: true }),
@@ -44,12 +49,28 @@ __decorate([
 __decorate([
     (0, swagger_1.ApiProperty)({
         description: 'Unique code/slug for the environment',
-        example: 'unity',
+        example: 'basic-arena',
         maxLength: 50,
     }),
     (0, typeorm_1.Column)({ type: 'varchar', length: 50, unique: true }),
     __metadata("design:type", String)
 ], Environment.prototype, "environment_code", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        description: 'Description of the environment',
+        example: 'Simple flat arena for basic movement practice',
+    }),
+    (0, typeorm_1.Column)({ type: 'text', nullable: true }),
+    __metadata("design:type", String)
+], Environment.prototype, "description", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        description: 'Thumbnail image URL for the environment',
+        example: '/thumbnails/basic-arena.jpg',
+    }),
+    (0, typeorm_1.Column)({ type: 'varchar', length: 500, nullable: true }),
+    __metadata("design:type", String)
+], Environment.prototype, "thumbnail", void 0);
 __decorate([
     (0, swagger_1.ApiProperty)({
         description: 'Path or endpoint to the environment runtime',
@@ -59,6 +80,35 @@ __decorate([
     (0, typeorm_1.Column)({ type: 'varchar', length: 500 }),
     __metadata("design:type", String)
 ], Environment.prototype, "environment_path", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        description: '3D scene configuration in JSON format',
+        example: {
+            modelUrl: '/model/obocar.glb',
+            obstacles: [],
+            lighting: { ambient: '#ffffff', directional: { direction: [1, -1, 0], intensity: 0.8 } }
+        },
+    }),
+    (0, typeorm_1.Column)({ type: 'json', nullable: true }),
+    __metadata("design:type", Object)
+], Environment.prototype, "scene_config", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        description: 'Difficulty level of the environment',
+        example: 'easy',
+        enum: ['easy', 'medium', 'hard'],
+    }),
+    (0, typeorm_1.Column)({ type: 'varchar', length: 20, default: 'medium' }),
+    __metadata("design:type", String)
+], Environment.prototype, "difficulty", void 0);
+__decorate([
+    (0, swagger_1.ApiProperty)({
+        description: 'Tags for categorizing environments',
+        example: ['basic', 'beginner', 'tutorial'],
+    }),
+    (0, typeorm_1.Column)({ type: 'simple-array', nullable: true }),
+    __metadata("design:type", Array)
+], Environment.prototype, "tags", void 0);
 __decorate([
     (0, swagger_1.ApiProperty)({
         description: 'Whether this environment is currently active',

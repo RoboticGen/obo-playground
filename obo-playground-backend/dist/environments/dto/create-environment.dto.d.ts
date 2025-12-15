@@ -1,12 +1,10 @@
-import { Project } from './project.entity';
-export declare class Environment {
-    environment_id: number;
+export declare class CreateEnvironmentDto {
     environment_name: string;
     environment_code: string;
-    description: string;
-    thumbnail: string;
+    description?: string;
+    thumbnail?: string;
     environment_path: string;
-    scene_config: {
+    scene_config?: {
         modelUrl?: string;
         groundTexture?: string;
         groundColor?: string;
@@ -31,10 +29,7 @@ export declare class Environment {
             target?: [number, number, number];
         };
     };
-    difficulty: string;
-    tags: string[];
-    is_active: boolean;
-    created_at: Date;
-    updated_at: Date;
-    projects: Project[];
+    difficulty?: string;
+    tags?: string[];
+    is_active?: boolean;
 }
