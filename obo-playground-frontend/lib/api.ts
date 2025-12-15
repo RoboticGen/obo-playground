@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
 export interface Environment {
   environment_id: number;
@@ -67,6 +67,12 @@ export const projectsApi = {
   // Update a project
   updateProject: async (projectId: string, data: Partial<CreateProjectDto>): Promise<Project> => {
     const response = await api.patch(`/projects/${projectId}`, data);
+    return response.data;
+  },
+
+  // Get a single project by ID
+  getProjectById: async (projectId: string): Promise<Project> => {
+    const response = await api.get(`/projects/${projectId}`);
     return response.data;
   },
 };

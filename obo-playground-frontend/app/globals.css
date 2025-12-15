@@ -8,8 +8,12 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-display: var(--font-red-hat-display);
+  --font-text: var(--font-red-hat-text);
+  
+  /* Font family tokens for Tailwind */
+  --font-family-display: var(--font-red-hat-display);
+  --font-family-text: var(--font-red-hat-text);
 }
 
 @media (prefers-color-scheme: dark) {
