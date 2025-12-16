@@ -108,7 +108,7 @@ export default function Home() {
 
             {/* Hero Image - 3D Car Preview */}
             <div className="relative flex items-center justify-center">
-              <div className="relative h-[400px] w-full overflow-hidden rounded-sm border border-neutral-800 bg-black lg:h-[500px]">
+              <div className="relative h-[400px] w-full overflow-hidden rounded-sm border border-neutral-800 bg-gradient-to-br from-neutral-950 via-blue-950/30 to-neutral-950 lg:h-[500px]">
                 <CarPreview />
                 <div className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded-sm bg-black/80 px-4 py-2 backdrop-blur-sm">
                   <p className="text-sm font-medium text-neutral-400">

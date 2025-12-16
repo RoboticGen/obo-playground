@@ -14,6 +14,7 @@ A robust NestJS-based REST API for managing robotics playground projects with Po
 - ✅ **Security** - Helmet middleware for security headers
 - ✅ **Compression** - Response compression for better performance
 - ✅ **CORS** - Configurable cross-origin resource sharing
+- ✅ **Auto-Save API** - File content save/load endpoints for offline sync
 
 ## 📋 Prerequisites
 
@@ -96,6 +97,13 @@ The application will be available at:
 | GET | `/projects/:id` | Get a project by ID |
 | PATCH | `/projects/:id` | Update a project |
 | DELETE | `/projects/:id` | Delete a project |
+
+### File Content
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| PATCH | `/projects/:id/content` | Update project file content |
+| GET | `/projects/:id/content` | Get project file content |
 
 ### Health
 

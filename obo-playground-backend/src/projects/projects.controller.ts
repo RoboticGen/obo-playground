@@ -160,4 +160,72 @@ export class ProjectsController {
   async remove(@Param('id', ParseUUIDPipe) id: string) {
     await this.projectsService.remove(id);
   }
+
+  @Patch(':id/content')
+  @ApiOperation({ 
+    summary: 'Update project file content',
+    description: 'Updates the Python file content for a project',
+  })
+  @ApiParam({ 
+    name: 'id', 
+    description: 'Project UUID',
+    example: '123e4567-e89b-12d3-a456-426614174000',
+    type: String,
+  })
+  @ApiBody({ 
+    schema: {
+      type: 'object',
+      properties: {
+        code: {
+          type: 'string',
+          description: 'Python code content',
+        },
+      },
+      required: ['code'],
+    },
+  })
+  @ApiResponse({ 
+    status: HttpStatus.OK, 
+    description: 'File content successfully updated',
+  })
+  @ApiResponse({ 
+    status: HttpStatus.NOT_FOUND, 
+    description: 'Project not found',
+  })
+  async updateContent(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body('code') code: string,
+  ) {
+    return this.projectsService.updateFileContent(id, code);
+  }
+
+  @Get(':id/content')
+  @ApiOperation({ 
+    summary: 'Get project file content',
+    description: 'Retrieves the Python file content for a project',
+  })
+  @ApiParam({ 
+    name: 'id', 
+    description: 'Project UUID',
+    example: '123e4567-e89b-12d3-a456-426614174000',
+    type: String,
+  })
+  @ApiResponse({ 
+    status: HttpStatus.OK, 
+    description: 'File content retrieved successfully',
+    schema: {
+      type: 'object',
+      properties: {
+        code: { type: 'string' },
+        lastModified: { type: 'string', format: 'date-time' },
+      },
+    },
+  })
+  @ApiResponse({ 
+    status: HttpStatus.NOT_FOUND, 
+    description: 'Project not found',
+  })
+  async getContent(@Param('id', ParseUUIDPipe) id: string) {
+    return this.projectsService.getFileContent(id);
+  }
 }

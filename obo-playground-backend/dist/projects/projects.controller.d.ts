@@ -10,4 +10,12 @@ export declare class ProjectsController {
     findOne(id: string): Promise<Project>;
     update(id: string, updateProjectDto: UpdateProjectDto): Promise<Project>;
     remove(id: string): Promise<void>;
+    updateContent(id: string, code: string): Promise<{
+        message: string;
+        lastModified: Date;
+    }>;
+    getContent(id: string): Promise<{
+        code: string;
+        lastModified: Date;
+    }>;
 }

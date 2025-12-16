@@ -1,3 +1,17 @@
+/**
+ * Python Code Executor Module
+ * Manages Pyodide initialization and Python code execution in the browser
+ */
+
+import { PYODIDE_CONFIG, CODE_EXECUTION_TIMEOUT, ERROR_MESSAGES, LOG_PREFIX } from './constants';
+
+// ============================================================================
+// Type Definitions
+// ============================================================================
+
+/**
+ * Current state of the robot car (motor speeds, sensor readings)
+ */
 export interface CarState {
   leftMotorSpeed: number;
   rightMotorSpeed: number;
@@ -8,6 +22,9 @@ export interface CarState {
   rightDistance: number;
 }
 
+/**
+ * Event emitted during code execution
+ */
 export interface ExecutionEvent {
   type: 'line' | 'output' | 'error' | 'complete' | 'state_update';
   lineNumber?: number;
@@ -15,6 +32,19 @@ export interface ExecutionEvent {
   carState?: CarState;
 }
 
+/**
+ * Type for event callback handler
+ */
+export type ExecutionEventHandler = (event: ExecutionEvent) => void;
+
+// ============================================================================
+// Python Executor Class
+// ============================================================================
+
+/**
+ * Manages Python code execution via Pyodide in the browser
+ * Handles Pyodide initialization, code execution, and state management
+ */
 class PythonExecutor {
   private pyodide: any = null;
   private isInitialized = false;
@@ -28,44 +58,72 @@ class PythonExecutor {
     rightDistance: 100,
   };
 
+  /**
+   * Loads the Pyodide script from CDN into the page
+   * @throws Error if script fails to load
+   */
   private loadPyodideScript(): Promise<void> {
     return new Promise((resolve, reject) => {
+      // Check if already loaded
       if ((window as any).loadPyodide) {
         resolve();
         return;
       }
 
       const script = document.createElement('script');
-      script.src = 'https://cdn.jsdelivr.net/pyodide/v0.25.1/full/pyodide.js';
+      script.src = PYODIDE_CONFIG.CDN_URL;
       script.onload = () => resolve();
-      script.onerror = () => reject(new Error('Failed to load Pyodide script'));
+      script.onerror = () =>
+        reject(new Error(ERROR_MESSAGES.PYODIDE_LOAD_FAILED));
       document.head.appendChild(script);
     });
   }
 
-  async initialize() {
+  /**
+   * Initializes Pyodide runtime and loads OBOCar module
+   * Sets up Python environment for code execution
+   * @throws Error if initialization fails
+   */
+  async initialize(): Promise<void> {
     if (this.isInitialized) return;
 
-     ('🐍 Loading Pyodide from CDN...');
-    
-    // Load Pyodide from CDN directly in browser
+    console.log(`${LOG_PREFIX.PYTHON} Loading Pyodide from CDN...`);
+
+    // Ensure we're in browser context
     if (typeof window === 'undefined') {
-      throw new Error('Pyodide can only run in browser');
+      throw new Error('Pyodide can only run in browser environment');
     }
 
-    // Check if already loaded
+    // Load Pyodide script if not already loaded
     if (!(window as any).loadPyodide) {
-      // Load Pyodide script
       await this.loadPyodideScript();
     }
 
+    // Initialize Pyodide
     const loadPyodide = (window as any).loadPyodide;
     this.pyodide = await loadPyodide({
-      indexURL: 'https://cdn.jsdelivr.net/pyodide/v0.25.1/full/',
+      indexURL: PYODIDE_CONFIG.INDEX_URL,
     });
 
-    // Register callback function that Python will call
-    const carStateCallback = (stateJson: string) => {
+    // Register state callback
+    const carStateCallback = this.createStateCallback();
+    this.pyodide.globals.set('carStateCallback', carStateCallback);
+
+    // Load OBOCar module
+    await this.loadOBOCarModule();
+
+    // Patch Python environment
+    await this.patchPythonEnvironment();
+
+    this.isInitialized = true;
+    console.log(`${LOG_PREFIX.SUCCESS} Pyodide initialized`);
+  }
+
+  /**
+   * Creates the callback function for car state updates
+   */
+  private createStateCallback(): (stateJson: string) => void {
+    return (stateJson: string) => {
       try {
         const state = JSON.parse(stateJson);
         this.carState = state;
@@ -73,37 +131,49 @@ class PythonExecutor {
         console.error('Failed to parse car state:', error);
       }
     };
+  }
 
-    // Expose callback to Python's global namespace
-    this.pyodide.globals.set('carStateCallback', carStateCallback);
+  /**
+   * Loads the OBOCar Python module from public folder
+   * @throws Error if module fails to load
+   */
+  private async loadOBOCarModule(): Promise<void> {
+    console.log(`${LOG_PREFIX.PACKAGE} Loading obocar module...`);
 
-    // Load obocar.py module from public folder
-     ('📦 Loading obocar module...');
-    
     try {
       const response = await fetch('/obocar.py');
       if (!response.ok) {
-        throw new Error(`Failed to load obocar.py: ${response.statusText}`);
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
       const obocarCode = await response.text();
-      
-      // Write the module to Pyodide's virtual filesystem
+
+      // Write module to Pyodide's virtual filesystem
       this.pyodide.FS.writeFile('/obocar.py', obocarCode);
-      
-      // Add root directory to Python's module search path
+
+      // Add module directory to Python path
       await this.pyodide.runPythonAsync(`
 import sys
 if '/' not in sys.path:
     sys.path.insert(0, '/')
       `);
-      
-       ('✅ obocar.py loaded into Pyodide filesystem');
-    } catch (error) {
-      console.error('❌ Failed to load obocar.py:', error);
-      throw new Error('Could not load obocar module. Make sure obocar.py exists in the public folder.');
-    }
 
-    // Patch the OBOCar class and time module to use our callback
+      console.log(`${LOG_PREFIX.SUCCESS} obocar.py loaded`);
+    } catch (error) {
+      console.error(
+        `${LOG_PREFIX.ERROR} Failed to load obocar.py:`,
+        error
+      );
+      throw new Error(ERROR_MESSAGES.OBOCAR_MODULE_FAILED);
+    }
+  }
+
+  /**
+   * Patches Python environment for browser execution
+   * - Wraps OBOCar class to emit state updates
+   * - Replaces time.sleep with async-compatible version
+   * - Redirects stdout/stderr to browser console
+   */
+  private async patchPythonEnvironment(): Promise<void> {
     await this.pyodide.runPythonAsync(`
 import sys
 import json
@@ -113,16 +183,17 @@ import time as _time
 # Import the OBOCar class
 from obocar import OBOCar as _OBOCar
 
-# Patch OBOCar to send state updates to JavaScript
+# Wrap OBOCar to emit state updates to JavaScript
 class OBOCar(_OBOCar):
+    """Enhanced OBOCar that syncs state to JavaScript"""
+    
     def __init__(self):
         super().__init__()
-        # Store reference for sleep() to access
         import builtins
         builtins.current_car = self
     
     def _update_state(self):
-        """Send state update to JavaScript"""
+        """Send state update to JavaScript callback"""
         try:
             state = {
                 'leftMotorSpeed': self.left_motor_speed,
@@ -134,17 +205,11 @@ class OBOCar(_OBOCar):
                 'rightDistance': self.right_distance,
             }
             state_json = json.dumps(state)
-            # Use js.console.log directly to ensure output
-            import js
-            js.console.log(f"[OBOCar] State update: L={self.left_motor_speed}({self.left_motor_direction}), R={self.right_motor_speed}({self.right_motor_direction})")
-            # Call the JavaScript callback
             if 'carStateCallback' in globals():
                 carStateCallback(state_json)
-            else:
-                js.console.error("[OBOCar] ERROR: carStateCallback not found in globals!")
         except Exception as e:
             import js
-            js.console.error(f"[OBOCar] ERROR in _update_state: {e}")
+            js.console.error(f"[OBOCar] Error: {e}")
     
     def stop(self):
         super().stop()
@@ -182,30 +247,24 @@ class OBOCar(_OBOCar):
         super().right_motor_backward(speed)
         self._update_state()
 
-# Replace the OBOCar class in the obocar module with our patched version
+# Replace module's OBOCar with patched version
 import obocar
 obocar.OBOCar = OBOCar
 
-# Create global car instance for reference during sleep
 current_car = None
-
-# Store reference globally so sleep() can access it
 import builtins
 builtins.current_car = current_car
 
-# Patch time.sleep to be async-friendly and keep state synced
+# Patch time.sleep for async context
 original_sleep = _time.sleep
 
 async def async_sleep(seconds):
-    """Async sleep that yields control back to event loop and keeps motors running"""
-    # Break sleep into small chunks to keep sending state updates
-    # This ensures the 3D scene continues to receive motor state during sleep
-    chunks = int(seconds * 10)  # 10 updates per second (0.1s intervals)
+    """Async sleep that keeps state synced"""
+    chunks = int(seconds * 10)
     remainder = seconds - (chunks * 0.1)
     
     for _ in range(chunks):
         await asyncio.sleep(0.1)
-        # Send state update during sleep to keep motors running in 3D scene
         try:
             if hasattr(__builtins__, 'current_car') and current_car:
                 current_car._update_state()
@@ -216,21 +275,17 @@ async def async_sleep(seconds):
         await asyncio.sleep(remainder)
 
 def sleep(seconds):
-    """Synchronous sleep that works in Pyodide async context"""
-    # Use asyncio to allow other code to run
+    """Sync sleep in async context"""
     try:
         loop = asyncio.get_event_loop()
         loop.run_until_complete(async_sleep(seconds))
     except:
-        # Fallback to original sleep if asyncio not available
         original_sleep(seconds)
 
-# Replace time.sleep in global namespace
 import builtins
 builtins.sleep = sleep
 
-# Redirect print to  
-import sys
+# Redirect output to browser console
 import js
 
 class JSConsoleWriter:
@@ -243,25 +298,24 @@ class JSConsoleWriter:
 sys.stdout = JSConsoleWriter()
 sys.stderr = JSConsoleWriter()
     `);
-
-    this.isInitialized = true;
-     ('✅ Pyodide initialized');
   }
 
-  async executeCode(
-    code: string,
-    onEvent: (event: ExecutionEvent) => void
-  ): Promise<void> {
+  /**
+   * Executes Python code line-by-line with event callbacks
+   * @param code - Python source code to execute
+   * @param onEvent - Callback function for execution events
+   * @throws Error if execution fails
+   */
+  async executeCode(code: string, onEvent: ExecutionEventHandler): Promise<void> {
     if (!this.pyodide || !this.isInitialized) {
-      throw new Error('Pyodide not initialized');
+      throw new Error('Pyodide not initialized. Call initialize() first.');
     }
 
-    // Update callback to emit events during execution
+    // Update state callback
     const carStateCallback = (stateJson: string) => {
       try {
         const state = JSON.parse(stateJson);
         this.carState = state;
-         ('📊 Python → JS state update:', state);
         onEvent({
           type: 'state_update',
           carState: state,
@@ -270,12 +324,10 @@ sys.stderr = JSConsoleWriter()
         console.error('Failed to parse car state:', error);
       }
     };
-    
-    // Update the callback in Python's globals
+
     this.pyodide.globals.set('carStateCallback', carStateCallback);
 
     try {
-      // Split code into lines for line-by-line execution
       const lines = code.split('\n');
       let executableCode = '';
       let currentLineNumber = 0;
@@ -292,24 +344,22 @@ sys.stderr = JSConsoleWriter()
         currentLineNumber = i + 1;
         executableCode += line + '\n';
 
-        // Check if this line completes a statement
-        // (simple heuristic: not ending with : or \)
+        // Check if statement is complete
         if (
           !trimmedLine.endsWith(':') &&
           !trimmedLine.endsWith('\\') &&
           this.isCompleteStatement(executableCode)
         ) {
-          // Execute accumulated code
+          // Emit line execution event
           onEvent({
             type: 'line',
             lineNumber: currentLineNumber,
           });
 
           try {
-             ('🐍 Executing code:', executableCode.substring(0, 50) + '...');
             const result = await this.pyodide.runPythonAsync(executableCode);
-            
-            // Output result if any
+
+            // Emit output if result exists
             if (result !== undefined && result !== null) {
               onEvent({
                 type: 'output',
@@ -317,7 +367,7 @@ sys.stderr = JSConsoleWriter()
               });
             }
           } catch (error: any) {
-            console.error('❌ Execution error:', error);
+            console.error('Execution error:', error);
             onEvent({
               type: 'error',
               message: error.message || String(error),
@@ -327,13 +377,13 @@ sys.stderr = JSConsoleWriter()
           }
 
           executableCode = '';
-          
-          // Small delay for visualization (reduced for smoother loops)
+
+          // Small delay for smooth visualization
           await new Promise((resolve) => setTimeout(resolve, 50));
         }
       }
 
-      // Execute any remaining code
+      // Execute remaining code
       if (executableCode.trim()) {
         try {
           const result = await this.pyodide.runPythonAsync(executableCode);
@@ -361,11 +411,15 @@ sys.stderr = JSConsoleWriter()
     }
   }
 
+  /**
+   * Checks if Python code is syntactically complete
+   * @param code - Code string to validate
+   * @returns true if code is complete, false otherwise
+   */
   private isCompleteStatement(code: string): boolean {
     if (!this.pyodide) return false;
-    
+
     try {
-      // Try to compile the code to check if it's complete
       this.pyodide.runPython(`compile('''${code}''', '<string>', 'exec')`);
       return true;
     } catch {
@@ -373,14 +427,19 @@ sys.stderr = JSConsoleWriter()
     }
   }
 
-  updateSensorValues(front: number, left: number, right: number) {
+  /**
+   * Updates sensor distance values in Python environment
+   * @param front - Front sensor distance in cm
+   * @param left - Left sensor distance in cm
+   * @param right - Right sensor distance in cm
+   */
+  updateSensorValues(front: number, left: number, right: number): void {
     if (!this.pyodide) return;
 
     this.carState.frontDistance = front;
     this.carState.leftDistance = left;
     this.carState.rightDistance = right;
 
-    // Update in Python
     this.pyodide.runPython(`
 car.set_front_distance(${front})
 car.set_left_distance(${left})
@@ -388,14 +447,27 @@ car.set_right_distance(${right})
     `);
   }
 
+  /**
+   * Returns current car state
+   * @returns Snapshot of current CarState
+   */
   getCarState(): CarState {
     return { ...this.carState };
   }
 }
 
-// Singleton instance
+// ============================================================================
+// Singleton Pattern
+// ============================================================================
+
 let executorInstance: PythonExecutor | null = null;
 
+/**
+ * Gets or creates the singleton PythonExecutor instance
+ * Automatically initializes Pyodide on first call
+ * @returns Initialized PythonExecutor instance
+ * @throws Error if initialization fails
+ */
 export async function getPythonExecutor(): Promise<PythonExecutor> {
   if (!executorInstance) {
     executorInstance = new PythonExecutor();
