@@ -4,9 +4,6 @@ import { useEffect, useRef, useState } from 'react';
 import * as BABYLON from '@babylonjs/core';
 import '@babylonjs/loaders/glTF';
 
-// Dynamic import for anime.js to avoid SSR issues
-let anime: any = null;
-
 export default function CarPreview() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isExploded, setIsExploded] = useState(false);
@@ -14,6 +11,7 @@ export default function CarPreview() {
   const originalPositionsRef = useRef<Map<string, BABYLON.Vector3>>(new Map());
   const sceneRef = useRef<BABYLON.Scene | null>(null);
   const engineRef = useRef<BABYLON.Engine | null>(null);
+  const animeRef = useRef<any>(null);
   const isCleanedUpRef = useRef(false);
   const timeoutsRef = useRef<NodeJS.Timeout[]>([]);
 
@@ -26,11 +24,11 @@ export default function CarPreview() {
 
     // Dynamically import anime.js
     const loadAnime = async () => {
-      if (!anime) {
+      if (!animeRef.current) {
         const animeModule = await import('animejs');
-        anime = animeModule.default || animeModule;
+        animeRef.current = animeModule.default || animeModule;
       }
-      return anime;
+      return animeRef.current;
     };
 
     const canvas = canvasRef.current;
@@ -230,8 +228,8 @@ export default function CarPreview() {
         };
 
         // Stagger animation
-        if (anime) {
-          anime({
+        if (animeRef.current) {
+          animeRef.current({
             targets: mesh.position,
             x: targetPos.x,
             y: targetPos.y,
@@ -243,7 +241,7 @@ export default function CarPreview() {
 
           // Rotate parts during explosion
           if (mesh.rotation) {
-            anime({
+            animeRef.current({
               targets: mesh.rotation,
               x: mesh.rotation.x + (Math.random() - 0.5) * Math.PI * 2,
               y: mesh.rotation.y + (Math.random() - 0.5) * Math.PI * 2,
@@ -278,8 +276,8 @@ export default function CarPreview() {
         const originalPos = originalPositionsRef.current.get(mesh.name);
         if (!originalPos) return;
 
-        if (anime) {
-          anime({
+        if (animeRef.current) {
+          animeRef.current({
             targets: mesh.position,
             x: originalPos.x,
             y: originalPos.y,
@@ -297,7 +295,7 @@ export default function CarPreview() {
               z: mesh.rotation.z,
             };
             
-            anime({
+            animeRef.current({
               targets: currentRotation,
               x: 0,
               y: 0,
@@ -351,8 +349,8 @@ export default function CarPreview() {
       timeoutsRef.current = [];
       
       // Remove all anime animations
-      if (anime && typeof anime.remove === 'function') {
-        anime.remove(meshesRef.current);
+      if (animeRef.current && typeof animeRef.current.remove === 'function') {
+        animeRef.current.remove(meshesRef.current);
       }
       
       // Remove event listener
