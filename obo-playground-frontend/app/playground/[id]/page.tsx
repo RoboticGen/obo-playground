@@ -14,11 +14,11 @@ import { indexedDBService } from '@/lib/indexedDB';
 import { Environment } from '@/lib/environmentsApi';
 import {
   useProjectLoader,
-  useCodeExecution,
   useAutoSave,
   useNotifications,
   useSplitPanel,
 } from '@/lib/hooks';
+import { useCodeExecutionEvent } from '@/lib/useCodeExecutionEvent';
 import { DEFAULT_SPLIT_PANEL_WIDTH } from '@/lib/constants';
 import { PLAYGROUND_CONSTANTS } from '../constants';
 import PlaygroundHeader from '../components/PlaygroundHeader';
@@ -48,7 +48,7 @@ export default function PlaygroundPage() {
   // State Management
   const { code, setCode, codeRef, project, isLoading } = useProjectLoader(projectId);
   const { isRunning, currentLine, output, carState, executeCode, addOutput, clearOutput } =
-    useCodeExecution();
+    useCodeExecutionEvent();
   const { lastSaved } = useAutoSave(projectId, code);
   const { notifications, addNotification, removeNotification } = useNotifications();
   const { leftPanelWidth, containerRef, handleMouseDown } = useSplitPanel(
@@ -184,7 +184,7 @@ function useInitializePyodide(
     const initPyodide = async () => {
       try {
         addOutput(PLAYGROUND_CONSTANTS.MESSAGES.PYTHON_LOADING, 'info');
-        const { getPythonExecutor } = await import('@/lib/pythonExecutor');
+        const { getPythonExecutor } = await import('@/lib/pythonExecutorEvent');
         await getPythonExecutor();
         setIsPyodideReady(true);
         addOutput(PLAYGROUND_CONSTANTS.MESSAGES.PYTHON_INITIALIZED, 'success');
