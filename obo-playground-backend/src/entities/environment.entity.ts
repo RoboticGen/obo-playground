@@ -13,7 +13,7 @@ export class Environment {
 
   @ApiProperty({
     description: 'Name of the 3D simulation environment',
-    example: 'Unity 3D',
+    example: 'Basic Arena',
     maxLength: 100,
   })
   @Column({ type: 'varchar', length: 100, unique: true })
@@ -21,11 +21,25 @@ export class Environment {
 
   @ApiProperty({
     description: 'Unique code/slug for the environment',
-    example: 'unity',
+    example: 'basic-arena',
     maxLength: 50,
   })
   @Column({ type: 'varchar', length: 50, unique: true })
   environment_code: string;
+
+  @ApiProperty({
+    description: 'Description of the environment',
+    example: 'Simple flat arena for basic movement practice',
+  })
+  @Column({ type: 'text', nullable: true })
+  description: string;
+
+  @ApiProperty({
+    description: 'Thumbnail image URL for the environment',
+    example: '/thumbnails/basic-arena.jpg',
+  })
+  @Column({ type: 'varchar', length: 500, nullable: true })
+  thumbnail: string;
 
   @ApiProperty({
     description: 'Path or endpoint to the environment runtime',
@@ -34,6 +48,56 @@ export class Environment {
   })
   @Column({ type: 'varchar', length: 500 })
   environment_path: string;
+
+  @ApiProperty({
+    description: '3D scene configuration in JSON format',
+    example: {
+      modelUrl: '/model/obocar.glb',
+      obstacles: [],
+      lighting: { ambient: '#ffffff', directional: { direction: [1, -1, 0], intensity: 0.8 } }
+    },
+  })
+  @Column({ type: 'json', nullable: true })
+  scene_config: {
+    modelUrl?: string;
+    groundTexture?: string;
+    groundColor?: string;
+    obstacles?: Array<{
+      type: 'box' | 'sphere' | 'cylinder' | 'wall';
+      position: [number, number, number];
+      size: [number, number, number];
+      color?: string;
+      rotation?: [number, number, number];
+    }>;
+    lighting?: {
+      ambient?: string;
+      directional?: {
+        direction: [number, number, number];
+        intensity: number;
+      };
+    };
+    camera?: {
+      alpha?: number;
+      beta?: number;
+      radius?: number;
+      target?: [number, number, number];
+    };
+  };
+
+  @ApiProperty({
+    description: 'Difficulty level of the environment',
+    example: 'easy',
+    enum: ['easy', 'medium', 'hard'],
+  })
+  @Column({ type: 'varchar', length: 20, default: 'medium' })
+  difficulty: string;
+
+  @ApiProperty({
+    description: 'Tags for categorizing environments',
+    example: ['basic', 'beginner', 'tutorial'],
+  })
+  @Column({ type: 'simple-array', nullable: true })
+  tags: string[];
 
   @ApiProperty({
     description: 'Whether this environment is currently active',

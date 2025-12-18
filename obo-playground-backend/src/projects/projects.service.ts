@@ -165,6 +165,14 @@ if __name__ == "__main__":
     
     try {
       this.logger.log(`Deleting project: ${id}`);
+      
+      // Delete the Python file
+      const fullFilePath = path.join(process.cwd(), project.file_path);
+      if (fs.existsSync(fullFilePath)) {
+        fs.unlinkSync(fullFilePath);
+        this.logger.log(`Deleted file: ${fullFilePath}`);
+      }
+      
       await this.projectRepository.remove(project);
       this.logger.log(`Project deleted successfully: ${id}`);
     } catch (error) {
@@ -173,6 +181,72 @@ if __name__ == "__main__":
         error.stack,
       );
       throw new InternalServerErrorException('Failed to delete project');
+    }
+  }
+
+  async updateFileContent(id: string, code: string): Promise<{ message: string; lastModified: Date }> {
+    const project = await this.findOne(id);
+    
+    try {
+      this.logger.log(`Updating file content for project: ${id}`);
+      
+      const fullFilePath = path.join(process.cwd(), project.file_path);
+      
+      // Ensure directory exists
+      const directory = path.dirname(fullFilePath);
+      if (!fs.existsSync(directory)) {
+        fs.mkdirSync(directory, { recursive: true });
+      }
+      
+      // Write the file
+      fs.writeFileSync(fullFilePath, code, 'utf8');
+      
+      // Update project timestamp
+      project.updated_at = new Date();
+      await this.projectRepository.save(project);
+      
+      this.logger.log(`File content updated: ${fullFilePath}`);
+      
+      return {
+        message: 'File content updated successfully',
+        lastModified: project.updated_at,
+      };
+    } catch (error) {
+      this.logger.error(
+        `Failed to update file content for project ${id}: ${error.message}`,
+        error.stack,
+      );
+      throw new InternalServerErrorException('Failed to update file content');
+    }
+  }
+
+  async getFileContent(id: string): Promise<{ code: string; lastModified: Date }> {
+    const project = await this.findOne(id);
+    
+    try {
+      this.logger.log(`Reading file content for project: ${id}`);
+      
+      const fullFilePath = path.join(process.cwd(), project.file_path);
+      
+      if (!fs.existsSync(fullFilePath)) {
+        throw new NotFoundException(`File not found: ${project.file_path}`);
+      }
+      
+      const code = fs.readFileSync(fullFilePath, 'utf8');
+      
+      return {
+        code,
+        lastModified: project.updated_at,
+      };
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      this.logger.error(
+        `Failed to read file content for project ${id}: ${error.message}`,
+        error.stack,
+      );
+      throw new InternalServerErrorException('Failed to read file content');
     }
   }
 }

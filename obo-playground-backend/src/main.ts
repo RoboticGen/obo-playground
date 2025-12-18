@@ -71,9 +71,9 @@ async function bootstrap() {
   const port = process.env.PORT ?? 3000;
   await app.listen(port);
   
-  logger.log(`🚀 Application is running on: http://localhost:${port}`);
-  logger.log(`📚 API Documentation: http://localhost:${port}/api/docs`);
-  logger.log(`💚 Health Check: http://localhost:${port}/health`);
+  logger.log(`Application is running on: http://localhost:${port}`);
+  logger.log(`API Documentation: http://localhost:${port}/api/docs`);
+  logger.log(`Health Check: http://localhost:${port}/health`);
   logger.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
 }
 bootstrap();

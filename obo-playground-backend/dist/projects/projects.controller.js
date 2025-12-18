@@ -42,6 +42,12 @@ let ProjectsController = class ProjectsController {
     async remove(id) {
         await this.projectsService.remove(id);
     }
+    async updateContent(id, code) {
+        return this.projectsService.updateFileContent(id, code);
+    }
+    async getContent(id) {
+        return this.projectsService.getFileContent(id);
+    }
 };
 exports.ProjectsController = ProjectsController;
 __decorate([
@@ -181,6 +187,76 @@ __decorate([
     __metadata("design:paramtypes", [String]),
     __metadata("design:returntype", Promise)
 ], ProjectsController.prototype, "remove", null);
+__decorate([
+    (0, common_1.Patch)(':id/content'),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Update project file content',
+        description: 'Updates the Python file content for a project',
+    }),
+    (0, swagger_1.ApiParam)({
+        name: 'id',
+        description: 'Project UUID',
+        example: '123e4567-e89b-12d3-a456-426614174000',
+        type: String,
+    }),
+    (0, swagger_1.ApiBody)({
+        schema: {
+            type: 'object',
+            properties: {
+                code: {
+                    type: 'string',
+                    description: 'Python code content',
+                },
+            },
+            required: ['code'],
+        },
+    }),
+    (0, swagger_1.ApiResponse)({
+        status: common_1.HttpStatus.OK,
+        description: 'File content successfully updated',
+    }),
+    (0, swagger_1.ApiResponse)({
+        status: common_1.HttpStatus.NOT_FOUND,
+        description: 'Project not found',
+    }),
+    __param(0, (0, common_1.Param)('id', common_1.ParseUUIDPipe)),
+    __param(1, (0, common_1.Body)('code')),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, String]),
+    __metadata("design:returntype", Promise)
+], ProjectsController.prototype, "updateContent", null);
+__decorate([
+    (0, common_1.Get)(':id/content'),
+    (0, swagger_1.ApiOperation)({
+        summary: 'Get project file content',
+        description: 'Retrieves the Python file content for a project',
+    }),
+    (0, swagger_1.ApiParam)({
+        name: 'id',
+        description: 'Project UUID',
+        example: '123e4567-e89b-12d3-a456-426614174000',
+        type: String,
+    }),
+    (0, swagger_1.ApiResponse)({
+        status: common_1.HttpStatus.OK,
+        description: 'File content retrieved successfully',
+        schema: {
+            type: 'object',
+            properties: {
+                code: { type: 'string' },
+                lastModified: { type: 'string', format: 'date-time' },
+            },
+        },
+    }),
+    (0, swagger_1.ApiResponse)({
+        status: common_1.HttpStatus.NOT_FOUND,
+        description: 'Project not found',
+    }),
+    __param(0, (0, common_1.Param)('id', common_1.ParseUUIDPipe)),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String]),
+    __metadata("design:returntype", Promise)
+], ProjectsController.prototype, "getContent", null);
 exports.ProjectsController = ProjectsController = __decorate([
     (0, swagger_1.ApiTags)('projects'),
     (0, common_1.Controller)('projects'),

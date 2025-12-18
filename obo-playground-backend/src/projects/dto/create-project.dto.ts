@@ -1,4 +1,4 @@
-import { IsUUID, IsString, IsOptional, MaxLength } from 'class-validator';
+import { IsUUID, IsString, IsOptional, MaxLength, IsInt, IsPositive } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateProjectDto {
@@ -23,6 +23,8 @@ export class CreateProjectDto {
     description: 'ID of the 3D environment for running simulations',
     example: 1,
   })
+  @IsInt()
+  @IsPositive()
   environment_id: number;
 
   @ApiPropertyOptional({

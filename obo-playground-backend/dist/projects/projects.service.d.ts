@@ -13,4 +13,12 @@ export declare class ProjectsService {
     findByUserId(userId: string): Promise<Project[]>;
     update(id: string, updateProjectDto: UpdateProjectDto): Promise<Project>;
     remove(id: string): Promise<void>;
+    updateFileContent(id: string, code: string): Promise<{
+        message: string;
+        lastModified: Date;
+    }>;
+    getFileContent(id: string): Promise<{
+        code: string;
+        lastModified: Date;
+    }>;
 }
