@@ -256,6 +256,9 @@ class OBOCar(_OBOCar):
 import obocar
 obocar.OBOCar = OBOCar
 
+# Add sleep function from time module
+from time import sleep
+
 # Setup console redirection
 class ConsoleWriter:
     def write(self, text):
@@ -291,53 +294,80 @@ async function executeCode(code: string, requestId: string): Promise<void> {
     const lines = code.split('\n');
     let executableCode = '';
     let lineNumber = 0;
+    let indentLevel = 0;
+    let lastIndentLevel = 0;
+    let inBlock = false;
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
       const trimmed = line.trim();
 
-      if (!trimmed || trimmed.startsWith('#')) continue;
+      // Skip empty lines and comments at the top level
+      if (!trimmed || trimmed.startsWith('#')) {
+        continue;
+      }
+
+      // Get indentation
+      const leadingSpaces = line.match(/^(\s*)/)?.[1]?.length || 0;
+      indentLevel = Math.floor(leadingSpaces / 4);
 
       lineNumber = i + 1;
       executableCode += line + '\n';
 
-      if (
-        !trimmed.endsWith(':') &&
-        !trimmed.endsWith('\\') &&
-        isCompleteStatement(executableCode)
-      ) {
-        emitEvent({
-          type: 'execution:line',
-          lineNumber,
-          timestamp: Date.now(),
-        });
+      // Check if entering a block
+      if (trimmed.endsWith(':')) {
+        inBlock = true;
+        lastIndentLevel = indentLevel;
+        continue;
+      }
 
-        try {
-          const result = await pyodide.runPythonAsync(executableCode);
-          if (result !== undefined && result !== null) {
-            emitEvent({
-              type: 'execution:output',
-              message: String(result),
-              timestamp: Date.now(),
-            });
-          }
-        } catch (error: any) {
+      // Check if exiting a block (dedent)
+      if (inBlock && indentLevel <= lastIndentLevel && !trimmed.endsWith('\\')) {
+        // Execute the accumulated block
+        const codeToExecute = executableCode.trim();
+        if (codeToExecute) {
           emitEvent({
-            type: 'error:occurred',
-            message: error.message || String(error),
+            type: 'execution:line',
+            lineNumber,
             timestamp: Date.now(),
           });
-          return;
+
+          try {
+            const result = await pyodide.runPythonAsync(codeToExecute);
+            if (result !== undefined && result !== null) {
+              emitEvent({
+                type: 'execution:output',
+                message: String(result),
+                timestamp: Date.now(),
+              });
+            }
+          } catch (error: any) {
+            emitEvent({
+              type: 'error:occurred',
+              message: error.message || String(error),
+              timestamp: Date.now(),
+            });
+            return;
+          }
         }
 
         executableCode = '';
-        await new Promise((r) => setTimeout(r, 50));
+        inBlock = false;
+
+        // If current line is at top level and not empty, add it to next block
+        if (indentLevel === 0 && trimmed) {
+          executableCode += line + '\n';
+        }
       }
+
+      await new Promise((r) => setTimeout(r, 5));
     }
 
-    if (executableCode.trim()) {
+    // Execute any remaining code
+    const remaining = executableCode.trim();
+    if (remaining) {
       try {
-        const result = await pyodide.runPythonAsync(executableCode);
+        const result = await pyodide.runPythonAsync(remaining);
         if (result !== undefined && result !== null) {
           emitEvent({
             type: 'execution:output',
