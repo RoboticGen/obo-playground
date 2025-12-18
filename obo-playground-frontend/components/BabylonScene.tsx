@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import * as BABYLON from '@babylonjs/core';
+import HavokPhysics from '@babylonjs/havok';
 import {
   Engine,
   Scene,
@@ -13,7 +14,6 @@ import {
   Color3,
   SceneLoader,
   AbstractMesh,
-  PhysicsImpostor,
   Mesh,
   DirectionalLight,
   ShadowGenerator,
@@ -22,6 +22,7 @@ import {
 import '@babylonjs/loaders/glTF';
 import '@babylonjs/loaders/OBJ';
 import { Environment } from '@/lib/environmentsApi';
+import { createPhysicsManager, getPhysicsManager, disposePhysicsManager } from '@/lib/physics';
 
 interface CarState {
   leftMotorSpeed: number;
@@ -45,9 +46,10 @@ export default function BabylonScene({ onSceneReady, carState, environment }: Ba
   const carRef = useRef<AbstractMesh | null>(null);
   const leftWheelsRef = useRef<AbstractMesh[]>([]);
   const rightWheelsRef = useRef<AbstractMesh[]>([]);
-  const frontWheelRef = useRef<AbstractMesh | null>(null); // Front steering wheel
+  const frontWheelRef = useRef<AbstractMesh | null>(null);
   const engineRef = useRef<Engine | WebGPUEngine | null>(null);
   const cameraRef = useRef<ArcRotateCamera | null>(null);
+  const physicsManagerRef = useRef<any>(null);
   const carStateRef = useRef<CarState>({
     leftMotorSpeed: 0,
     rightMotorSpeed: 0,
@@ -57,7 +59,7 @@ export default function BabylonScene({ onSceneReady, carState, environment }: Ba
     leftDistance: 100,
     rightDistance: 100,
   });
-  const initialPositionRef = useRef<Vector3>(new Vector3(0, 2, 0));
+  const initialPositionRef = useRef<Vector3>(new Vector3(0, 1.0, 0)); // Match minimum height
   const initialRotationRef = useRef<number>(Math.PI);
   const gridLinesRef = useRef<Mesh[]>([]);
   const [isWebGPU, setIsWebGPU] = useState(false);
@@ -69,7 +71,6 @@ export default function BabylonScene({ onSceneReady, carState, environment }: Ba
     
     // Prevent multiple initializations
     if (engineRef.current || sceneRef.current) {
-       ('⚠️ Scene already initialized, skipping... (This is normal in React development mode)');
       return;
     }
 
@@ -86,7 +87,6 @@ export default function BabylonScene({ onSceneReady, carState, environment }: Ba
       
       try {
         if (await WebGPUEngine.IsSupportedAsync) {
-           ('🚀 Initializing WebGPU engine...');
           const webGPUEngine = new WebGPUEngine(canvas);
           await webGPUEngine.initAsync();
           
@@ -99,12 +99,10 @@ export default function BabylonScene({ onSceneReady, carState, environment }: Ba
           engine = webGPUEngine;
           useWebGPU = true;
           setIsWebGPU(true);
-           ('✅ WebGPU engine initialized');
         } else {
           throw new Error('WebGPU not supported');
         }
       } catch (error) {
-         ('⚠️ WebGPU not available, falling back to WebGL');
         
         if (isCleanedUp) return;
         
@@ -197,6 +195,10 @@ export default function BabylonScene({ onSceneReady, carState, environment }: Ba
       groundMaterial.specularColor = new Color3(0.1, 0.1, 0.1);
       ground.material = groundMaterial;
       ground.receiveShadows = true;
+      
+      // Add physics to ground (will be enabled after physics initialization)
+      // Mark it so we can add physics later
+      (ground as any).needsPhysics = true;
 
       // Grid pattern on ground
       const gridLines: Mesh[] = [];
@@ -227,8 +229,6 @@ export default function BabylonScene({ onSceneReady, carState, environment }: Ba
       // Create obstacles from environment configuration
       const obstacles: Mesh[] = [];
       const envObstacles = environment?.scene_config?.obstacles || [];
-      
-       (`🏗️ Creating ${envObstacles.length} obstacles from environment`);
       
       envObstacles.forEach((obstacle, index) => {
         let mesh: Mesh | null = null;
@@ -286,11 +286,10 @@ export default function BabylonScene({ onSceneReady, carState, environment }: Ba
         }
       });
 
-      // Load car model - try multiple formats
-       ('🚗 Loading car model...');
+      // Load car model
       let carLoaded = false;
       
-      // Try GLB first (recommended format, best supported)
+      // Try GLB first
       try {
         const result = await SceneLoader.ImportMeshAsync(
           '',
@@ -304,52 +303,42 @@ export default function BabylonScene({ onSceneReady, carState, environment }: Ba
           // We need to use this root to rotate the entire car model hierarchy
           const car = result.meshes[0];
           
-           (`🚗 Car root node: ${car.name}, type: ${car.constructor.name}`);
-           (`📦 Total meshes in model: ${result.meshes.length}`);
-           (`📦 Total transform nodes: ${result.transformNodes?.length || 0}`);
-          
           car.position = new Vector3(0, 2, 0);
           car.scaling = new Vector3(0.1, 0.1, 0.1);
           
           // CRITICAL: Set rotation quaternion to null to ensure euler rotation works
           car.rotationQuaternion = null;
           
-          // Rotate car to face forward (adjust angle based on model orientation)
-          car.rotation.y = Math.PI; // -90 degrees to face correct direction
+          // Rotate car to face forward
+          car.rotation.y = Math.PI;
           
           carRef.current = car;
           
-          // Add a visual direction arrow to see car rotation clearly (forward is -X direction)
+          // Add a visual direction arrow
           const arrow = MeshBuilder.CreateCylinder('directionArrow', { height: 5, diameter: 0.5 }, scene);
-          arrow.position = new Vector3(-3, 2, 0); // In front of car (-X is forward)
-          arrow.rotation.z = Math.PI / 2; // Point forward along X axis
+          arrow.position = new Vector3(-3, 2, 0);
+          arrow.rotation.z = Math.PI / 2;
           const arrowMat = new StandardMaterial('arrowMat', scene);
-          arrowMat.diffuseColor = new Color3(1, 0, 0); // Red arrow
-          arrowMat.emissiveColor = new Color3(0.5, 0, 0); // Glowing
+          arrowMat.diffuseColor = new Color3(1, 0, 0);
+          arrowMat.emissiveColor = new Color3(0.5, 0, 0);
           arrow.material = arrowMat;
-          arrow.parent = car; // Attach to car so it rotates with it
-           ('🎯 Added red direction arrow to car');
+          arrow.parent = car;
 
           // Add meshes to shadow caster
           result.meshes.forEach((mesh) => {
             shadowGenerator.addShadowCaster(mesh);
           });
 
-          // Find wheel MESHES by searching for parent transform nodes and collecting descendants
-          // Roda 34 mm v2:3 (parent) -> Roda 34 mm v2 -> Body1_node_101 (actual mesh!)
-           ('🔍 Searching for wheel meshes and motor connection rods...');
+          // Find wheel meshes and motor connection rods
           
           // Helper function to recursively find all mesh descendants
           const findMeshDescendants = (node: any): AbstractMesh[] => {
             const meshes: AbstractMesh[] = [];
             
-            // If this node is a mesh with geometry, add it
             if (node instanceof AbstractMesh && (node as any).geometry) {
               meshes.push(node);
-               ('    ✓ Found mesh:', node.name);
             }
             
-            // Recursively check all children
             const children = node.getChildren ? node.getChildren() : [];
             children.forEach((child: any) => {
               meshes.push(...findMeshDescendants(child));
@@ -359,49 +348,36 @@ export default function BabylonScene({ onSceneReady, carState, environment }: Ba
           };
           
           // Find motor connection rods to determine wheel rotation axis
-          let wheelRotationAxis: 'x' | 'y' | 'z' = 'x'; // Default to X (most common for car wheels)
+          let wheelRotationAxis: 'x' | 'y' | 'z' = 'x';
           result.transformNodes?.forEach((node) => {
             if (node.name.includes('Eixo - Encaixe D')) {
-               ('🔧 Found motor rod:', node.name);
               const descendants = findMeshDescendants(node);
               if (descendants.length > 0) {
                 const rodMesh = descendants[0];
-                // Check bounding box to determine rod orientation
                 const boundingInfo = rodMesh.getBoundingInfo();
                 const size = boundingInfo.boundingBox.maximum.subtract(boundingInfo.boundingBox.minimum);
-                 (`  📏 Rod dimensions: X=${size.x.toFixed(2)}, Y=${size.y.toFixed(2)}, Z=${size.z.toFixed(2)}`);
                 
-                // The rod axis determines which axis the wheel rotates around
-                // Rod along X → Wheels rotate around X (most common for cars)
-                // Rod along Y → Wheels rotate around X or Z (perpendicular to rod)
-                // Rod along Z → Wheels rotate around Z
                 if (size.x > size.y && size.x > size.z) {
                   wheelRotationAxis = 'x';
-                   ('  ⚙️ Motor rod along X-axis → Wheels rotate around X-axis');
                 } else if (size.y > size.x && size.y > size.z) {
-                  // Rod is vertical, wheel should rotate horizontally
-                  wheelRotationAxis = 'x'; // Use X for side-to-side car wheels
-                   ('  ⚙️ Motor rod along Y-axis → Wheels rotate around X-axis (perpendicular)');
+                  wheelRotationAxis = 'x';
                 } else {
                   wheelRotationAxis = 'z';
-                   ('  ⚙️ Motor rod along Z-axis → Wheels rotate around Z-axis');
                 }
               }
             }
           });
           
-          // Store the rotation axis for use in render loop
           (car as any).wheelRotationAxis = wheelRotationAxis;
-           (`🎯 Wheel rotation axis determined: ${wheelRotationAxis.toUpperCase()}`);
           
           // Find front steering wheel (12mmball)
           result.transformNodes?.forEach((node) => {
             if (node.name === '12mmball:1' || node.name.includes('12mmball')) {
-               ('🎯 Found front steering wheel:', node.name);
+              console.log('🎯 Found front steering wheel:', node.name);
               const wheelMeshes = findMeshDescendants(node);
               if (wheelMeshes.length > 0) {
                 frontWheelRef.current = wheelMeshes[0];
-                 ('  ✅ Front wheel mesh:', wheelMeshes[0].name);
+                console.log('  ✅ Front wheel mesh:', wheelMeshes[0].name);
               }
             }
           });
@@ -413,17 +389,17 @@ export default function BabylonScene({ onSceneReady, carState, environment }: Ba
               const nodeName = node.name;
               
               if (nodeName === 'Roda 34 mm v2:3') {
-                 ('🔵 Found LEFT wheel parent:', nodeName);
-                 ('  🔎 Searching for descendant meshes...');
+                console.log('🔵 Found LEFT wheel parent:', nodeName);
+                console.log('  🔎 Searching for descendant meshes...');
                 const wheelMeshes = findMeshDescendants(node);
                 leftWheelsRef.current.push(...wheelMeshes);
-                 (`  ✅ Added ${wheelMeshes.length} left wheel meshes`);
+                console.log(`  ✅ Added ${wheelMeshes.length} left wheel meshes`);
               } else if (nodeName === 'Roda 34 mm v2:4') {
-                 ('🔴 Found RIGHT wheel parent:', nodeName);
-                 ('  🔎 Searching for descendant meshes...');
+                console.log('🔴 Found RIGHT wheel parent:', nodeName);
+                console.log('  🔎 Searching for descendant meshes...');
                 const wheelMeshes = findMeshDescendants(node);
                 rightWheelsRef.current.push(...wheelMeshes);
-                 (`  ✅ Added ${wheelMeshes.length} right wheel meshes`);
+                console.log(`  ✅ Added ${wheelMeshes.length} right wheel meshes`);
               }
             });
           }
@@ -433,22 +409,18 @@ export default function BabylonScene({ onSceneReady, carState, environment }: Ba
             result.meshes.forEach((mesh) => {
               const meshName = mesh.name;
               
-              // Look for Body1_node_101 (left wheel mesh) and Body1_node_102 (right wheel mesh)
               if ((meshName.includes('Body1_node_101') || meshName === 'Roda 34 mm v2:3') && leftWheelsRef.current.length === 0) {
-                 ('🔵 Found LEFT wheel mesh directly:', meshName);
                 leftWheelsRef.current.push(mesh);
               } else if ((meshName.includes('Body1_node_102') || meshName === 'Roda 34 mm v2:4') && rightWheelsRef.current.length === 0) {
-                 ('🔴 Found RIGHT wheel mesh directly:', meshName);
                 rightWheelsRef.current.push(mesh);
               }
             });
           }
 
-           (`✅ Car model loaded (GLB format) - ${leftWheelsRef.current.length} left wheels, ${rightWheelsRef.current.length} right wheels`);
           carLoaded = true;
         }
       } catch (glbError) {
-         ('ℹ️ GLB model not found');
+        // GLB model not found, try GLTF
       }
 
       // Try GLTF if GLB failed
@@ -463,23 +435,18 @@ export default function BabylonScene({ onSceneReady, carState, environment }: Ba
 
           if (result.meshes.length > 0) {
             const car = result.meshes[0];
-            car.position = new Vector3(0, 3.5, 0);
+            car.position = new Vector3(0, 4, 0);
             car.scaling = new Vector3(0.5, 0.5, 0.5);
             carRef.current = car;
 
-            // Add meshes to shadow caster
             result.meshes.forEach((mesh) => {
               shadowGenerator.addShadowCaster(mesh);
             });
 
-            // Find wheel MESHES (same logic as GLB)
-             ('🔍 Searching for wheel meshes in GLTF scene...');
-            
             const findMeshDescendants = (node: any): AbstractMesh[] => {
               const meshes: AbstractMesh[] = [];
               if (node instanceof AbstractMesh && (node as any).geometry) {
                 meshes.push(node);
-                 ('    ✓ Found mesh:', node.name);
               }
               const children = node.getChildren ? node.getChildren() : [];
               children.forEach((child: any) => {
@@ -489,20 +456,19 @@ export default function BabylonScene({ onSceneReady, carState, environment }: Ba
             };
             
             if (result.transformNodes && result.transformNodes.length > 0) {
-               (`📦 Found ${result.transformNodes.length} transform nodes`);
               result.transformNodes.forEach((node) => {
                 const nodeName = node.name;
                 
                 if (nodeName === 'Roda 34 mm v2:3') {
-                   ('🔵 Found LEFT wheel parent:', nodeName);
+                  console.log('🔵 Found LEFT wheel parent:', nodeName);
                   const wheelMeshes = findMeshDescendants(node);
                   leftWheelsRef.current.push(...wheelMeshes);
-                   (`  ✅ Added ${wheelMeshes.length} left wheel meshes`);
+                  console.log(`  ✅ Added ${wheelMeshes.length} left wheel meshes`);
                 } else if (nodeName === 'Roda 34 mm v2:4') {
-                   ('🔴 Found RIGHT wheel parent:', nodeName);
+                  console.log('🔴 Found RIGHT wheel parent:', nodeName);
                   const wheelMeshes = findMeshDescendants(node);
                   rightWheelsRef.current.push(...wheelMeshes);
-                   (`  ✅ Added ${wheelMeshes.length} right wheel meshes`);
+                  console.log(`  ✅ Added ${wheelMeshes.length} right wheel meshes`);
                 }
               });
             }
@@ -511,10 +477,10 @@ export default function BabylonScene({ onSceneReady, carState, environment }: Ba
               result.meshes.forEach((mesh) => {
                 const meshName = mesh.name;
                 if ((meshName.includes('Body1_node_101') || meshName === 'Roda 34 mm v2:3') && leftWheelsRef.current.length === 0) {
-                   ('🔵 Found LEFT wheel mesh directly:', meshName);
+                  console.log('🔵 Found LEFT wheel mesh directly:', meshName);
                   leftWheelsRef.current.push(mesh);
                 } else if ((meshName.includes('Body1_node_102') || meshName === 'Roda 34 mm v2:4') && rightWheelsRef.current.length === 0) {
-                   ('🔴 Found RIGHT wheel mesh directly:', meshName);
+                  console.log('🔴 Found RIGHT wheel mesh directly:', meshName);
                   rightWheelsRef.current.push(mesh);
                 }
               });
@@ -530,9 +496,6 @@ export default function BabylonScene({ onSceneReady, carState, environment }: Ba
 
       // Create placeholder car if no model loaded
       if (!carLoaded) {
-         ('📦 Creating placeholder car model');
-        
-        // Create placeholder car
         const carBody = MeshBuilder.CreateBox('carBody', { width: 3, height: 1, depth: 4.5 }, scene);
         carBody.position = new Vector3(0, 1.5, 0);
         
@@ -567,6 +530,58 @@ export default function BabylonScene({ onSceneReady, carState, environment }: Ba
         shadowGenerator.addShadowCaster(carBody);
       }
 
+      // Initialize Havok Physics Engine
+      try {
+        const havokInstance = await HavokPhysics();
+        const physicsManager = createPhysicsManager(scene, havokInstance);
+        physicsManagerRef.current = physicsManager;
+        await physicsManager.initialize();
+
+        // Setup car physics if we have the meshes
+        if (carRef.current && (leftWheelsRef.current.length > 0 || rightWheelsRef.current.length > 0)) {
+          // Use placeholder wheels if not found in model
+          if (leftWheelsRef.current.length === 0 && rightWheelsRef.current.length === 0) {
+            const wheels = scene.meshes.filter(m => m.name.startsWith('wheel'));
+            if (wheels.length >= 4) {
+              leftWheelsRef.current = [wheels[0], wheels[2]];
+              rightWheelsRef.current = [wheels[1], wheels[3]];
+            }
+          }
+
+          physicsManager.setupCarPhysics(
+            carRef.current,
+            leftWheelsRef.current,
+            rightWheelsRef.current
+          );
+        }
+
+        // Add physics to ground
+        const groundMesh = scene.getMeshByName('ground');
+        
+        if (groundMesh) {
+          try {
+            const groundBBox = groundMesh.getBoundingInfo().boundingBox;
+            const groundSize = groundBBox.maximum.subtract(groundBBox.minimum);
+            
+            new BABYLON.PhysicsAggregate(
+              groundMesh,
+              BABYLON.PhysicsShapeType.BOX,
+              { 
+                mass: 0, 
+                friction: 0.8, 
+                restitution: 0.0,
+                extents: new BABYLON.Vector3(groundSize.x / 2, 0.1, groundSize.z / 2)
+              },
+              scene
+            );
+          } catch (groundError) {
+            console.error('Failed to create ground physics:', groundError);
+          }
+        }
+      } catch (physicsError) {
+        console.error('Havok physics initialization error:', physicsError);
+      }
+
       // Call onSceneReady callback
       if (onSceneReady) {
         onSceneReady(scene, carRef.current);
@@ -575,147 +590,88 @@ export default function BabylonScene({ onSceneReady, carState, environment }: Ba
       setSceneLoaded(true);
 
       // Render loop with continuous car movement
-      let lastLogTime = 0;
-      let hasLoggedRefCheck = false;
-      let frameCount = 0;
       engine.runRenderLoop(() => {
-        frameCount++;
-        
-        if (!hasLoggedRefCheck) {
-           ('🔄 Render loop - carRef:', !!carRef.current, 'carStateRef:', carStateRef.current);
-          hasLoggedRefCheck = true;
-        }
-        
-        // Log frame count every second to verify render loop is running
-        const now = Date.now();
-        if (now - lastLogTime > 1000) {
-           (`🎬 Frame ${frameCount} - Render loop active`);
-        }
-        
         if (carRef.current && carStateRef.current) {
           const car = carRef.current;
           const currentCarState = carStateRef.current;
           
-          // Calculate differential drive motion
           const leftSpeed = (currentCarState.leftMotorSpeed / 512) * currentCarState.leftMotorDirection;
           const rightSpeed = (currentCarState.rightMotorSpeed / 512) * currentCarState.rightMotorDirection;
-          
-          // Differential drive: avgSpeed moves car forward/backward, turnRate rotates it
-          const avgSpeed = (leftSpeed + rightSpeed) / 2;
-          const turnRate = (rightSpeed - leftSpeed);
-          
-          // Scale factors for realistic movement (SIGNIFICANTLY increased for visibility)
-          const moveSpeed = avgSpeed * 0.1; // Forward/backward speed - THIS HAPPENS EVERY FRAME (~60fps)
-          const turnSpeed = turnRate * 0.15;  // Rotation speed from wheel friction - MASSIVELY INCREASED for visible rotation
-          
-          // Debug logging (once per second) - ALWAYS log motor state
-          const now = Date.now();
-          if (now - lastLogTime > 1000) {
-            const hasMotorActivity = currentCarState.leftMotorSpeed > 0 || currentCarState.rightMotorSpeed > 0;
-             ('🎮 Motor state:', {
-              leftMotorSpeed: currentCarState.leftMotorSpeed,
-              leftMotorDirection: currentCarState.leftMotorDirection,
-              rightMotorSpeed: currentCarState.rightMotorSpeed,
-              rightMotorDirection: currentCarState.rightMotorDirection,
-              leftSpeed: leftSpeed.toFixed(2),
-              rightSpeed: rightSpeed.toFixed(2),
-              avgSpeed: avgSpeed.toFixed(2),
-              turnRate: turnRate.toFixed(2),
-              turnSpeed: turnSpeed.toFixed(3),
-              moveSpeed: moveSpeed.toFixed(3),
-              rotation: car.rotation.y.toFixed(2),
-              position: `(${car.position.x.toFixed(1)}, ${car.position.z.toFixed(1)})`,
-              hasMotorActivity,
-              wheelsFound: `L:${leftWheelsRef.current.length} R:${rightWheelsRef.current.length}`
-            });
-            lastLogTime = now;
-          }
-          
-          // Rotate individual wheels based on motor speeds
-          // Use the axis determined from motor rod orientation
-          const rotationAxis = (car as any).wheelRotationAxis || 'z';
-          
-          if (leftWheelsRef.current.length > 0) {
-            leftWheelsRef.current.forEach((wheel, index) => {
-              if (wheel) {
-                // LEFT wheels rotate in NEGATIVE direction
-                if (rotationAxis === 'x') {
-                  wheel.rotation.x -= leftSpeed * 0.2;
-                } else if (rotationAxis === 'y') {
-                  wheel.rotation.y -= leftSpeed * 0.2;
-                } else {
-                  wheel.rotation.z -= leftSpeed * 0.2;
-                }
-                
-                // Debug first wheel rotation every 60 frames
-                if (index === 0 && frameCount % 60 === 0 && Math.abs(leftSpeed) > 0.01) {
-                   (`🔵 LEFT wheel [${wheel.name}] rotation (${rotationAxis}): ${wheel.rotation[rotationAxis].toFixed(2)}, speed=${leftSpeed.toFixed(2)}`);
-                }
-              }
-            });
-          }
-          
-          if (rightWheelsRef.current.length > 0) {
-            rightWheelsRef.current.forEach((wheel, index) => {
-              if (wheel) {
-                // RIGHT wheels rotate in POSITIVE direction (mirrored from left)
-                if (rotationAxis === 'x') {
-                  wheel.rotation.x += rightSpeed * 0.2;
-                } else if (rotationAxis === 'y') {
-                  wheel.rotation.y += rightSpeed * 0.2;
-                } else {
-                  wheel.rotation.z += rightSpeed * 0.2;
-                }
-                
-                // Debug first wheel rotation every 60 frames
-                if (index === 0 && frameCount % 60 === 0 && Math.abs(rightSpeed) > 0.01) {
-                   (`🔴 RIGHT wheel [${wheel.name}] rotation (${rotationAxis}): ${wheel.rotation[rotationAxis].toFixed(2)}, speed=${rightSpeed.toFixed(2)}`);
-                }
-              }
-            });
-          }
-          
-          // Rotate front steering wheel based on turn rate
-          if (frontWheelRef.current && Math.abs(turnRate) > 0.01) {
-            // Turn rate determines steering angle (max ~30 degrees)
-            const steeringAngle = turnRate * 0.5; // Limit steering angle
-            frontWheelRef.current.rotation.y = steeringAngle;
+
+          // PHYSICS-DRIVEN MOVEMENT
+          if (physicsManagerRef.current) {
+            physicsManagerRef.current.applyMotorTorque(
+              currentCarState.leftMotorSpeed * currentCarState.leftMotorDirection,
+              currentCarState.rightMotorSpeed * currentCarState.rightMotorDirection
+            );
+
+            physicsManagerRef.current.updateWheelRotation();
+            physicsManagerRef.current.constrainCarHeight();
+
+            const physicsPos = physicsManagerRef.current.getCarPosition();
+            const physicsRot = physicsManagerRef.current.getCarRotation();
             
-            if (frameCount % 60 === 0) {
-               (`🎯 Front wheel steering: ${(steeringAngle * 180 / Math.PI).toFixed(1)}°, turnRate=${turnRate.toFixed(2)}`);
+            car.position = physicsPos;
+            car.rotationQuaternion = physicsRot;
+
+            if (cameraRef.current) {
+              cameraRef.current.target = physicsPos.clone();
             }
-          } else if (frontWheelRef.current && Math.abs(turnRate) <= 0.01) {
-            // Return to center when not turning
-            frontWheelRef.current.rotation.y *= 0.9; // Smooth return to center
-          }
-          
-          // Apply car body rotation EVERY FRAME
-          if (Math.abs(turnSpeed) > 0.0001) {
-            const oldRotation = car.rotation.y;
-            car.rotation.y -= turnSpeed;  // Subtract to match correct turn direction
+          } else {
+            // FALLBACK: KINEMATIC MODE
+            const avgSpeed = (leftSpeed + rightSpeed) / 2;
+            const turnRate = (rightSpeed - leftSpeed);
+            const moveSpeed = avgSpeed * 0.1;
+            const turnSpeed = turnRate * 0.15;
             
-            // Debug rotation application every 10 frames
-            if (frameCount % 10 === 0) {
-               (`🔄 ROTATION: old=${oldRotation.toFixed(3)}, turnSpeed=${turnSpeed.toFixed(3)}, new=${car.rotation.y.toFixed(3)}, diff=${(car.rotation.y - oldRotation).toFixed(3)}`);
+            // Rotate wheels (visual only in kinematic mode)
+            const rotationAxis = (car as any).wheelRotationAxis || 'z';
+            
+            if (leftWheelsRef.current.length > 0) {
+              leftWheelsRef.current.forEach((wheel) => {
+                if (wheel) {
+                  if (rotationAxis === 'x') {
+                    wheel.rotation.x -= leftSpeed * 0.2;
+                  } else if (rotationAxis === 'y') {
+                    wheel.rotation.y -= leftSpeed * 0.2;
+                  } else {
+                    wheel.rotation.z -= leftSpeed * 0.2;
+                  }
+                }
+              });
             }
-          }
-          
-          // Apply car body forward movement EVERY FRAME based on rotation
-          if (Math.abs(avgSpeed) > 0.001) {
-            // Car model's forward is along -X axis, perpendicular (left/right) is Z axis
-            const forwardX = Math.cos(car.rotation.y);   // X is forward direction
-            const forwardZ = -Math.sin(car.rotation.y);  // Z is perpendicular (left/right)
             
-            // APPLY MOVEMENT EVERY FRAME - this is the key to continuous motion
-            car.position.x += forwardX * moveSpeed;
-            car.position.z += forwardZ * moveSpeed;
-          }
-          
-          // Log periodically for debugging - ALWAYS log when motors are active
-          if (frameCount % 60 === 0) {
-            const hasMotion = Math.abs(avgSpeed) > 0.001 || Math.abs(turnSpeed) > 0.0001;
-            if (hasMotion) {
-               (`🚗 Moving: Frame ${frameCount}, avgSpeed ${avgSpeed.toFixed(2)}, Pos (${car.position.x.toFixed(1)}, ${car.position.z.toFixed(1)}), Rot ${car.rotation.y.toFixed(2)}, Left wheels: ${leftWheelsRef.current.length}, Right wheels: ${rightWheelsRef.current.length}`);
+            if (rightWheelsRef.current.length > 0) {
+              rightWheelsRef.current.forEach((wheel) => {
+                if (wheel) {
+                  if (rotationAxis === 'x') {
+                    wheel.rotation.x += rightSpeed * 0.2;
+                  } else if (rotationAxis === 'y') {
+                    wheel.rotation.y += rightSpeed * 0.2;
+                  } else {
+                    wheel.rotation.z += rightSpeed * 0.2;
+                  }
+                }
+              });
+            }
+            
+            // Apply car body rotation and position
+            if (Math.abs(turnSpeed) > 0.0001) {
+              car.rotation.y -= turnSpeed;
+            }
+            
+            // Apply forward movement
+            if (Math.abs(moveSpeed) > 0.0001) {
+              car.position.x -= moveSpeed * Math.sin(car.rotation.y);
+              car.position.z -= moveSpeed * Math.cos(car.rotation.y);
+            }
+            
+            // Front wheel steering (visual)
+            if (frontWheelRef.current && Math.abs(turnRate) > 0.01) {
+              const steeringAngle = turnRate * 0.5;
+              frontWheelRef.current.rotation.y = steeringAngle;
+            } else if (frontWheelRef.current && Math.abs(turnRate) <= 0.01) {
+              frontWheelRef.current.rotation.y *= 0.9;
             }
           }
         }
@@ -749,6 +705,12 @@ export default function BabylonScene({ onSceneReady, carState, environment }: Ba
     return () => {
       isCleanedUp = true;
       
+      // Dispose physics
+      if (physicsManagerRef.current) {
+        disposePhysicsManager();
+        physicsManagerRef.current = null;
+      }
+      
       if (sceneRef.current) {
         sceneRef.current.dispose();
         sceneRef.current = null;
@@ -762,17 +724,13 @@ export default function BabylonScene({ onSceneReady, carState, environment }: Ba
       carRef.current = null;
       leftWheelsRef.current = [];
       rightWheelsRef.current = [];
-       ('🧹 Babylon.js cleaned up');
     };
   }, []);
 
   // Update car state when props change
   useEffect(() => {
     if (carState && sceneLoaded) {
-       ('✅ BabylonScene updating car state:', carState);
-       ('📍 Ref before update:', carStateRef.current);
       carStateRef.current = carState;
-       ('📍 Ref after update:', carStateRef.current);
     }
   }, [carState, sceneLoaded]);
 
@@ -781,7 +739,6 @@ export default function BabylonScene({ onSceneReady, carState, environment }: Ba
     if (!sceneRef.current || !sceneLoaded) return;
     
     const scene = sceneRef.current;
-     ('🌍 Environment changed, recreating obstacles...');
     
     // Remove old obstacles
     const oldObstacles = scene.meshes.filter(mesh => mesh.name.startsWith('obstacle_'));
@@ -789,7 +746,6 @@ export default function BabylonScene({ onSceneReady, carState, environment }: Ba
     
     // Create new obstacles from environment
     const envObstacles = environment?.scene_config?.obstacles || [];
-     (`🏗️ Creating ${envObstacles.length} new obstacles`);
     
     envObstacles.forEach((obstacle, index) => {
       let mesh: Mesh | null = null;
@@ -839,9 +795,10 @@ export default function BabylonScene({ onSceneReady, carState, environment }: Ba
         mesh.material = material;
         
         // Add shadows if shadowGenerator exists
-        const shadowGenerator = scene.lights.find(l => l instanceof DirectionalLight)?.getShadowGenerator?.();
-        if (shadowGenerator) {
-          shadowGenerator.addShadowCaster(mesh);
+        const directionalLight = scene.lights.find(l => l instanceof DirectionalLight) as DirectionalLight | undefined;
+        if (directionalLight?.getShadowGenerator?.()) {
+          const sg = directionalLight.getShadowGenerator() as BABYLON.ShadowGenerator;
+          sg.addShadowCaster(mesh);
         }
       }
     });
@@ -853,7 +810,6 @@ export default function BabylonScene({ onSceneReady, carState, environment }: Ba
       if (groundMaterial) {
         const color = Color3.FromHexString(environment.scene_config.groundColor);
         groundMaterial.diffuseColor = color;
-         (`🎨 Ground color updated to ${environment.scene_config.groundColor}`);
       }
     }
   }, [environment, sceneLoaded]);
@@ -862,7 +818,6 @@ export default function BabylonScene({ onSceneReady, carState, environment }: Ba
   useEffect(() => {
     const handleReset = () => {
       if (carRef.current) {
-         ('🔄 Resetting car to initial position');
         carRef.current.position = initialPositionRef.current.clone();
         carRef.current.rotation.y = initialRotationRef.current;
         
