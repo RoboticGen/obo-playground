@@ -76,6 +76,8 @@ export class PhysicsManager {
         this.carBody.body.setMassProperties({
           inertia: new BABYLON.Vector3(0, 1, 0),
         });
+        // Disable gravity so car doesn't sink
+        this.carBody.body.setGravityFactor(0);
       }
 
       this.wheelMeshes = [...leftWheels, ...rightWheels];

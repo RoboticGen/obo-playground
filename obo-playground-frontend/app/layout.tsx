@@ -28,26 +28,6 @@ export default function RootLayout({
     <html lang="en">
       <head>
         {/* Havok Physics Engine - automatically loaded via npm package */}
-        
-        {/* Debug Helper for Physics Status */}
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `
-              window.__physicsDebug = function() {
-                console.log('🔍 Physics Debug Info:');
-                console.log('  Havok is loaded via npm package @babylonjs/havok');
-                console.log('  If physics failed to initialize, check console for error logs');
-                console.log('  Look for logs: 🚀 Initializing Havok physics engine...');
-              };
-              // Call on load
-              if (document.readyState === 'loading') {
-                document.addEventListener('DOMContentLoaded', window.__physicsDebug);
-              } else {
-                window.__physicsDebug();
-              }
-            `,
-          }}
-        />
       </head>
       <body
         className={`${redHatDisplay.variable} ${redHatText.variable} font-[family-name:var(--font-red-hat-text)] antialiased`}
