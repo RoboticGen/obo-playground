@@ -156,7 +156,7 @@ export class PhysicsManager {
     // Left wheels rotate based on left motor speed
     if (this.wheelMeshes.length >= 2) {
       const leftSpeed = (Math.abs(this.lastLeftMotorSpeed) / 512) * 0.2;
-      const leftDir = this.lastLeftMotorSpeed >= 0 ? -1 : 1;  // Flip direction
+      const leftDir = this.lastLeftMotorSpeed >= 0 ? 1 : -1;  // Flip direction
       
       // Assuming first 2 wheels are left
       for (let i = 0; i < Math.min(2, this.wheelMeshes.length); i++) {
@@ -168,7 +168,7 @@ export class PhysicsManager {
       
       // Right wheels rotate based on right motor speed
       const rightSpeed = (Math.abs(this.lastRightMotorSpeed) / 512) * 0.2;
-      const rightDir = this.lastRightMotorSpeed >= 0 ? -1 : 1;  // Flip direction
+      const rightDir = this.lastRightMotorSpeed >= 0 ? 1 : -1;  // Flip direction
       
       // Remaining wheels are right (assuming 2 left + 2 right = 4 total)
       for (let i = 2; i < this.wheelMeshes.length; i++) {

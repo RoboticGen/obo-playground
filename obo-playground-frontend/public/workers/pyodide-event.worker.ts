@@ -292,98 +292,15 @@ async function executeCode(code: string, requestId: string): Promise<void> {
       timestamp: Date.now(),
     });
 
-    const lines = code.split('\n');
-    let executableCode = '';
-    let lineNumber = 0;
-    let indentLevel = 0;
-    let lastIndentLevel = 0;
-    let inBlock = false;
+    // Let Pyodide handle all parsing and execution - no manual filtering
+    const result = await pyodide.runPythonAsync(code);
 
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-      const trimmed = line.trim();
-
-      // Skip empty lines and comments at the top level
-      if (!trimmed || trimmed.startsWith('#')) {
-        continue;
-      }
-
-      // Get indentation
-      const leadingSpaces = line.match(/^(\s*)/)?.[1]?.length || 0;
-      indentLevel = Math.floor(leadingSpaces / 4);
-
-      lineNumber = i + 1;
-      executableCode += line + '\n';
-
-      // Check if entering a block
-      if (trimmed.endsWith(':')) {
-        inBlock = true;
-        lastIndentLevel = indentLevel;
-        continue;
-      }
-
-      // Check if exiting a block (dedent)
-      if (inBlock && indentLevel <= lastIndentLevel && !trimmed.endsWith('\\')) {
-        // Execute the accumulated block
-        const codeToExecute = executableCode.trim();
-        if (codeToExecute) {
-          emitEvent({
-            type: 'execution:line',
-            lineNumber,
-            timestamp: Date.now(),
-          });
-
-          try {
-            const result = await pyodide.runPythonAsync(codeToExecute);
-            if (result !== undefined && result !== null) {
-              emitEvent({
-                type: 'execution:output',
-                message: String(result),
-                timestamp: Date.now(),
-              });
-            }
-          } catch (error: any) {
-            emitEvent({
-              type: 'error:occurred',
-              message: error.message || String(error),
-              timestamp: Date.now(),
-            });
-            return;
-          }
-        }
-
-        executableCode = '';
-        inBlock = false;
-
-        // If current line is at top level and not empty, add it to next block
-        if (indentLevel === 0 && trimmed) {
-          executableCode += line + '\n';
-        }
-      }
-
-      await new Promise((r) => setTimeout(r, 5));
-    }
-
-    // Execute any remaining code
-    const remaining = executableCode.trim();
-    if (remaining) {
-      try {
-        const result = await pyodide.runPythonAsync(remaining);
-        if (result !== undefined && result !== null) {
-          emitEvent({
-            type: 'execution:output',
-            message: String(result),
-            timestamp: Date.now(),
-          });
-        }
-      } catch (error: any) {
-        emitEvent({
-          type: 'error:occurred',
-          message: error.message || String(error),
-          timestamp: Date.now(),
-        });
-        return;
-      }
+    if (result !== undefined && result !== null) {
+      emitEvent({
+        type: 'execution:output',
+        message: String(result),
+        timestamp: Date.now(),
+      });
     }
 
     emitEvent({
@@ -396,19 +313,6 @@ async function executeCode(code: string, requestId: string): Promise<void> {
       message: error.message || String(error),
       timestamp: Date.now(),
     });
-  }
-}
-
-/**
- * Check if Python statement is complete
- */
-function isCompleteStatement(code: string): boolean {
-  if (!pyodide) return false;
-  try {
-    pyodide.runPython(`compile('''${code}''', '<string>', 'exec')`);
-    return true;
-  } catch {
-    return false;
   }
 }
 

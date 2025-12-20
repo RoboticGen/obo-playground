@@ -23,6 +23,7 @@ class EventDrivenPythonExecutor {
   private eventBus = getCarEventBus();
   private errorHandler = getErrorHandler();
   private isInitialized = false;
+  private isExecuting = false; // Prevent concurrent executions
   private executionTimeout = 30000; // 30 seconds
 
   constructor() {
@@ -143,40 +144,50 @@ class EventDrivenPythonExecutor {
       throw new Error('Executor not initialized. Call initialize() first.');
     }
 
+    // Prevent concurrent executions
+    if (this.isExecuting) {
+      throw new Error('Code is already executing. Please wait for it to complete.');
+    }
+
+    this.isExecuting = true;
+
     const executionId = `exec_${Date.now()}_${Math.random()}`;
 
-    return new Promise((resolve, reject) => {
-      // Register pending request with timeout
-      const unregister = this.messageQueue.registerRequest(
-        executionId,
-        resolve,
-        reject
-      );
+    try {
+      return await new Promise((resolve, reject) => {
+        // Register pending request with timeout
+        const unregister = this.messageQueue.registerRequest(
+          executionId,
+          resolve,
+          reject
+        );
 
-      // Listen for completion
-      const unsubscribeComplete = this.eventBus.on('execution:completed', () => {
-        unregister();
-        unsubscribeComplete();
-        resolve();
+        // Listen for completion (one-time listener)
+        const unsubscribeComplete = this.eventBus.once('execution:completed', () => {
+          unregister();
+          resolve();
+        });
+
+        // Listen for errors (one-time listener)
+        const unsubscribeError = this.eventBus.once('error:occurred', (event) => {
+          unregister();
+          unsubscribeError();
+          unsubscribeComplete();
+          reject(new Error(event.message));
+        });
+
+        // Send execution request
+        const request: WorkerRequest = {
+          id: executionId,
+          type: 'execute',
+          payload: { code },
+        };
+
+        this.worker!.postMessage(request);
       });
-
-      // Listen for errors
-      const unsubscribeError = this.eventBus.on('error:occurred', (event) => {
-        unregister();
-        unsubscribeError();
-        unsubscribeComplete();
-        reject(new Error(event.message));
-      });
-
-      // Send execution request
-      const request: WorkerRequest = {
-        id: executionId,
-        type: 'execute',
-        payload: { code },
-      };
-
-      this.worker!.postMessage(request);
-    });
+    } finally {
+      this.isExecuting = false;
+    }
   }
 
   /**

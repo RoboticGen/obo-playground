@@ -72,9 +72,10 @@ function findWheels(result: any): { leftWheels: AbstractMesh[]; rightWheels: Abs
   if (result.transformNodes && result.transformNodes.length > 0) {
     result.transformNodes.forEach((node: any) => {
       if (node.name === 'Roda 34 mm v2:3') {
-        leftWheels.push(...findMeshDescendants(node));
-      } else if (node.name === 'Roda 34 mm v2:4') {
         rightWheels.push(...findMeshDescendants(node));
+
+      } else if (node.name === 'Roda 34 mm v2:4') {
+        leftWheels.push(...findMeshDescendants(node));
       }
     });
   }

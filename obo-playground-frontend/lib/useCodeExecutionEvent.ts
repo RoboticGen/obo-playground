@@ -7,7 +7,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { getPythonExecutor } from './pythonExecutorEvent';
 import { getCarEventBus } from './carEventBus';
 import { getErrorHandler } from './errorHandler';
-import type { CarState } from './pythonExecutor';
+import type { CarState } from './executionTypes';
 
 /**
  * Hook for executing Python code with event-driven architecture
@@ -61,7 +61,6 @@ export function useCodeExecutionEvent() {
           }),
 
           executor.onEvent('state:changed', (event) => {
-            console.log('[useCodeExecutionEvent] Received state:changed event:', event);
             setCarState({
               leftMotorSpeed: event.leftMotorSpeed,
               rightMotorSpeed: event.rightMotorSpeed,
@@ -74,7 +73,6 @@ export function useCodeExecutionEvent() {
           }),
 
           executor.onEvent('error:occurred', (event) => {
-            console.error('[useCodeExecutionEvent] Error event:', event);
             setExecutionError(event.message);
             addOutput(event.message, 'error');
           }),

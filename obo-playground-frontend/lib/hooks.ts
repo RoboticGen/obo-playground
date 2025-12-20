@@ -5,11 +5,10 @@
 
 import { useCallback, useState, useRef, useEffect } from 'react';
 import {
-  getPythonExecutor,
   ExecutionEvent,
   ExecutionEventHandler,
   CarState,
-} from '@/lib/pythonExecutor';
+} from '@/lib/executionTypes';
 import { projectsApi, Project } from '@/lib/api';
 import { indexedDBService } from '@/lib/indexedDB';
 import { autoSaveService } from '@/lib/autoSave';

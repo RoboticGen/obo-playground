@@ -31,8 +31,8 @@ class MessageQueue {
   private pendingRequests = new Map<string, { resolve: Function; reject: Function }>();
 
   constructor(options: MessageQueueOptions = {}) {
-    this.maxQueueSize = options.maxQueueSize ?? 1000;
-    this.timeout = options.timeout ?? 30000;
+    this.maxQueueSize = options.maxQueueSize ?? 100000;
+    this.timeout = options.timeout ?? 30000000;
     this.onError = options.onError ?? ((error) => console.error('[MessageQueue]', error));
   }
 
