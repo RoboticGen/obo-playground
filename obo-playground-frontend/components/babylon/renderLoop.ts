@@ -47,21 +47,22 @@ export function updateCarKinematic(params: RenderLoopParams): void {
   
   const rotationAxis = (car as any).wheelRotationAxis || 'z';
   
-  // Rotate wheels (both sides rotate in same direction for forward motion)
+  // Rotate wheels - left wheels negated due to model geometry, right wheels normal
+  // Left wheels - negate to match right wheel direction
   leftWheels.forEach((wheel) => {
     if (wheel) {
-      if (rotationAxis === 'x') wheel.rotation.x += leftSpeed * 0.2;
-      else if (rotationAxis === 'y') wheel.rotation.y += leftSpeed * 0.2;
-      else wheel.rotation.z += leftSpeed * 0.2;
+      if (rotationAxis === 'x') wheel.rotation.x -= leftSpeed * 0.2;
+      else if (rotationAxis === 'y') wheel.rotation.y -= leftSpeed * 0.2;
+      else wheel.rotation.z -= leftSpeed * 0.2;
     }
   });
   
-  // Right wheels are mirrored in the model, so negate rotation direction
+  // Right wheels - use normal formula
   rightWheels.forEach((wheel) => {
     if (wheel) {
-      if (rotationAxis === 'x') wheel.rotation.x -= rightSpeed * 0.2;
-      else if (rotationAxis === 'y') wheel.rotation.y -= rightSpeed * 0.2;
-      else wheel.rotation.z -= rightSpeed * 0.2;
+      if (rotationAxis === 'x') wheel.rotation.x += rightSpeed * 0.2;
+      else if (rotationAxis === 'y') wheel.rotation.y += rightSpeed * 0.2;
+      else wheel.rotation.z += rightSpeed * 0.2;
     }
   });
   

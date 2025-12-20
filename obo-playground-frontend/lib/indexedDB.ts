@@ -157,7 +157,7 @@ class IndexedDBService {
           const putRequest = store.put(data);
           
           putRequest.onsuccess = () => {
-            console.log('✅ Project marked as synced:', projectId);
+            console.log('Project marked as synced:', projectId);
             resolve();
           };
 

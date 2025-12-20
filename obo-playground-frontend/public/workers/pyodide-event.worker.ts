@@ -28,6 +28,7 @@ let carState = {
  * Send event to main thread
  */
 function emitEvent(event: CarEvent): void {
+  console.log('[PyodideWorker] EMIT EVENT:', event.type, event);
   self.postMessage({
     type: 'event',
     payload: event,
@@ -447,14 +448,17 @@ if 'car' in dir():
 
 self.onmessage = async (event: MessageEvent<WorkerRequest>) => {
   const { id, type, payload } = event.data;
+  console.log('[PyodideWorker] RECEIVED MESSAGE:', type, 'id:', id, 'payload:', payload);
 
   try {
     switch (type) {
       case 'init':
+        console.log('[PyodideWorker] Processing INIT request');
         await initPyodide();
         break;
 
       case 'execute':
+        console.log('[PyodideWorker] Processing EXECUTE request, code length:', payload?.code?.length);
         if (payload?.code) {
           await executeCode(payload.code, id);
         }

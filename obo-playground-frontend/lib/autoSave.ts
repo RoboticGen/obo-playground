@@ -145,7 +145,7 @@ class AutoSaveService {
       // Mark as synced in IndexedDB
       await indexedDBService.markAsSynced(projectId);
 
-      console.log('✅ Code synced to backend:', projectId);
+      console.log('Code synced to backend:', projectId);
 
       if (options.onSaveToBackend) {
         options.onSaveToBackend();

@@ -40,6 +40,8 @@ class MessageQueue {
    * Add a message to the queue
    */
   enqueue(message: WorkerMessage): void {
+    console.log('[MessageQueue] ENQUEUE:', message.type, 'id:', message.id, 'queue size:', this.queue.length + 1);
+    
     if (this.queue.length >= this.maxQueueSize) {
       this.onError(new Error(`Message queue full (max: ${this.maxQueueSize})`));
       return;
@@ -52,7 +54,11 @@ class MessageQueue {
    * Get next message from queue
    */
   dequeue(): WorkerMessage | undefined {
-    return this.queue.shift();
+    const message = this.queue.shift();
+    if (message) {
+      console.log('[MessageQueue] DEQUEUE:', message.type, 'id:', message.id, 'remaining:', this.queue.length);
+    }
+    return message;
   }
 
   /**
@@ -97,9 +103,12 @@ class MessageQueue {
   resolveRequest(messageId: string, data: any): void {
     const request = this.pendingRequests.get(messageId);
     if (request) {
+      console.log('[MessageQueue] RESOLVE REQUEST:', messageId, 'pending left:', this.pendingRequests.size - 1);
       clearTimeout((request as any).timeout);
       request.resolve(data);
       this.pendingRequests.delete(messageId);
+    } else {
+      console.warn('[MessageQueue] RESOLVE REQUEST not found:', messageId);
     }
   }
 
@@ -109,6 +118,7 @@ class MessageQueue {
   rejectRequest(messageId: string, error: Error): void {
     const request = this.pendingRequests.get(messageId);
     if (request) {
+      console.warn('[MessageQueue] REJECT REQUEST:', messageId, 'error:', error.message);
       clearTimeout((request as any).timeout);
       request.reject(error);
       this.pendingRequests.delete(messageId);

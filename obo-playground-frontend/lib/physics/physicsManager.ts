@@ -152,12 +152,31 @@ export class PhysicsManager {
   updateWheelRotation(): void {
     if (!this.wheelMeshes.length) return;
 
-    const speed = this.getCarVelocity().length();
-    const wheelRotationSpeed = (speed / 0.1) * 0.05;
-
-    for (const wheel of this.wheelMeshes) {
-      if (wheel) {
-        wheel.rotation.x += wheelRotationSpeed;
+    // Wheels should rotate based on their motor speeds, not just forward velocity
+    // Left wheels rotate based on left motor speed
+    if (this.wheelMeshes.length >= 2) {
+      const leftSpeed = (Math.abs(this.lastLeftMotorSpeed) / 512) * 0.2;
+      const leftDir = this.lastLeftMotorSpeed >= 0 ? -1 : 1;  // Flip direction
+      
+      // Assuming first 2 wheels are left
+      for (let i = 0; i < Math.min(2, this.wheelMeshes.length); i++) {
+        const wheel = this.wheelMeshes[i];
+        if (wheel) {
+          wheel.rotation.x += leftDir * leftSpeed;
+        }
+      }
+      
+      // Right wheels rotate based on right motor speed
+      const rightSpeed = (Math.abs(this.lastRightMotorSpeed) / 512) * 0.2;
+      const rightDir = this.lastRightMotorSpeed >= 0 ? -1 : 1;  // Flip direction
+      
+      // Remaining wheels are right (assuming 2 left + 2 right = 4 total)
+      for (let i = 2; i < this.wheelMeshes.length; i++) {
+        const wheel = this.wheelMeshes[i];
+        if (wheel) {
+          // Negate right wheels to compensate for mirrored geometry
+          wheel.rotation.x -= rightDir * rightSpeed;
+        }
       }
     }
   }
