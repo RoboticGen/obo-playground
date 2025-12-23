@@ -5,6 +5,7 @@ import {
   CallHandler,
   Logger,
 } from '@nestjs/common';
+import { Request, Response } from 'express';
 import { Observable } from 'rxjs';
 import { tap } from 'rxjs/operators';
 
@@ -12,33 +13,37 @@ import { tap } from 'rxjs/operators';
 export class LoggingInterceptor implements NestInterceptor {
   private readonly logger = new Logger(LoggingInterceptor.name);
 
-  intercept(context: ExecutionContext, next: CallHandler): Observable<any> {
-    const request = context.switchToHttp().getRequest();
+  intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
+    const request = context.switchToHttp().getRequest<Request>();
     const { method, url, body, query, params } = request;
     const userAgent = request.get('user-agent') || '';
-    const ip = request.ip;
+    const ip = request.ip || 'unknown';
 
     const now = Date.now();
     this.logger.log(
       `Incoming Request: ${method} ${url} - ${ip} - ${userAgent}`,
     );
 
-    if (body && Object.keys(body).length) {
+    if (body && typeof body === 'object' && Object.keys(body).length > 0) {
       this.logger.debug(`Request Body: ${JSON.stringify(body)}`);
     }
 
-    if (query && Object.keys(query).length) {
+    if (query && typeof query === 'object' && Object.keys(query).length > 0) {
       this.logger.debug(`Query Params: ${JSON.stringify(query)}`);
     }
 
-    if (params && Object.keys(params).length) {
+    if (
+      params &&
+      typeof params === 'object' &&
+      Object.keys(params).length > 0
+    ) {
       this.logger.debug(`Route Params: ${JSON.stringify(params)}`);
     }
 
     return next.handle().pipe(
       tap({
-        next: (data: any) => {
-          const response = context.switchToHttp().getResponse();
+        next: () => {
+          const response = context.switchToHttp().getResponse<Response>();
           const { statusCode } = response;
           const responseTime = Date.now() - now;
 

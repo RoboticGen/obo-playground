@@ -28,7 +28,6 @@ class EventDrivenPythonExecutor {
 
   constructor() {
     this.messageQueue = new MessageQueue({
-      maxQueueSize: 500,
       timeout: this.executionTimeout,
       onError: (error) => {
         this.errorHandler.handle(error, {
@@ -217,13 +216,6 @@ class EventDrivenPythonExecutor {
    */
   onceEvent(eventType: any, handler: (event: any) => void | Promise<void>): () => void {
     return this.eventBus.once(eventType, handler);
-  }
-
-  /**
-   * Get event history
-   */
-  getEventHistory(eventType?: string, limit?: number) {
-    return this.eventBus.getHistory(eventType, limit);
   }
 
   /**

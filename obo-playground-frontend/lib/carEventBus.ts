@@ -17,8 +17,6 @@ interface EventSubscription {
  */
 class CarEventBus {
   private subscriptions = new Map<CarEventType, EventSubscription[]>();
-  private eventHistory: CarEvent[] = [];
-  private maxHistorySize = 100;
   private isEnabled = true;
 
   /**
@@ -100,12 +98,6 @@ class CarEventBus {
   async emit(event: CarEvent): Promise<void> {
     if (!this.isEnabled) return;
 
-    // Add to history
-    this.eventHistory.push(event);
-    if (this.eventHistory.length > this.maxHistorySize) {
-      this.eventHistory.shift();
-    }
-
     const handlers = this.subscriptions.get(event.type);
     if (!handlers) return;
 
@@ -129,26 +121,6 @@ class CarEventBus {
         handlers.splice(index, 1);
       }
     });
-  }
-
-  /**
-   * Get event history (for debugging or replay)
-   */
-  getHistory(eventType?: CarEventType, limit: number = 50): CarEvent[] {
-    let history = this.eventHistory;
-
-    if (eventType) {
-      history = history.filter((e) => e.type === eventType);
-    }
-
-    return history.slice(-limit);
-  }
-
-  /**
-   * Clear event history
-   */
-  clearHistory(): void {
-    this.eventHistory = [];
   }
 
   /**
@@ -177,7 +149,6 @@ class CarEventBus {
    */
   reset(): void {
     this.subscriptions.clear();
-    this.eventHistory = [];
   }
 }
 

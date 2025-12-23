@@ -81,9 +81,11 @@ export function setupLights(scene: Scene): ShadowGenerator {
 }
 
 export function setupGround(scene: Scene, groundColor: string = '#4caf50'): Mesh {
-  const ground = MeshBuilder.CreateGround('ground', { width: 200, height: 200 }, scene);
-  const groundMaterial = new StandardMaterial('groundMaterial', scene);
+  // Use thick box as ground to prevent tunneling
+  const ground = MeshBuilder.CreateBox('ground', { width: 100, height: 2, depth: 100 }, scene);
+  ground.position.y = -1; // Top surface at y=0
   
+  const groundMaterial = new StandardMaterial('groundMaterial', scene);
   groundMaterial.diffuseColor = Color3.FromHexString(groundColor);
   groundMaterial.specularColor = new Color3(0.1, 0.1, 0.1);
   ground.material = groundMaterial;

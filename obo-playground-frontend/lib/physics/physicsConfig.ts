@@ -9,7 +9,7 @@ export const PHYSICS_CONFIG = {
 
   // Car/Robot properties (OBO car specs)
   car: {
-    mass: 2.5, // kg - roughly 2.5kg for a small robot
+    mass: 0.5, // kg - reduced to prevent sinking (was 2.5)
     width: 0.15, // meters
     length: 0.2, // meters
     height: 0.08, // meters

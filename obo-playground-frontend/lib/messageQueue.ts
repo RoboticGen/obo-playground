@@ -1,7 +1,6 @@
 /**
- * Worker Message Queue
- * Handles reliable message passing between main thread and worker
- * Prevents message loss and race conditions during rapid state changes
+ * Pending Request Tracker
+ * Tracks async operations between main thread and worker with timeouts
  */
 
 export interface WorkerMessage<T = any> {
@@ -9,91 +8,57 @@ export interface WorkerMessage<T = any> {
   type: string;
   payload: T;
   timestamp: number;
-  retryCount?: number;
 }
 
 export interface MessageQueueOptions {
-  maxQueueSize?: number;
   timeout?: number;
   onError?: (error: Error) => void;
 }
 
 /**
- * Manages a queue of messages to be sent to/from worker
- * Ensures no messages are dropped during high-frequency updates
+ * Tracks pending async requests with timeout handling
  */
 class MessageQueue {
-  private queue: WorkerMessage[] = [];
-  private maxQueueSize: number;
   private timeout: number;
   private onError: (error: Error) => void;
-  private isProcessing = false;
-  private pendingRequests = new Map<string, { resolve: Function; reject: Function }>();
+  private pendingRequests = new Map<string, { resolve: Function; reject: Function; timeout: any }>();
 
   constructor(options: MessageQueueOptions = {}) {
-    this.maxQueueSize = options.maxQueueSize ?? 100000;
-    this.timeout = options.timeout ?? 30000000;
+    this.timeout = options.timeout ?? 30000; // 30 seconds
     this.onError = options.onError ?? ((error) => console.error('[MessageQueue]', error));
   }
 
   /**
-   * Add a message to the queue
-   */
-  enqueue(message: WorkerMessage): void {
-    console.log('[MessageQueue] ENQUEUE:', message.type, 'id:', message.id, 'queue size:', this.queue.length + 1);
-    
-    if (this.queue.length >= this.maxQueueSize) {
-      this.onError(new Error(`Message queue full (max: ${this.maxQueueSize})`));
-      return;
-    }
-
-    this.queue.push(message);
-  }
-
-  /**
-   * Get next message from queue
-   */
-  dequeue(): WorkerMessage | undefined {
-    const message = this.queue.shift();
-    if (message) {
-      console.log('[MessageQueue] DEQUEUE:', message.type, 'id:', message.id, 'remaining:', this.queue.length);
-    }
-    return message;
-  }
-
-  /**
-   * Get queue size
-   */
-  size(): number {
-    return this.queue.length;
-  }
-
-  /**
-   * Clear the queue
+   * Clear all pending requests
    */
   clear(): void {
-    this.queue = [];
+    // Clear all timeouts
+    this.pendingRequests.forEach((request) => clearTimeout(request.timeout));
     this.pendingRequests.clear();
   }
 
   /**
-   * Register a pending request
+   * Register a pending request with timeout
    */
   registerRequest(
     messageId: string,
     resolve: Function,
     reject: Function
   ): () => void {
-    const timeout = setTimeout(() => {
+    const timeoutId = setTimeout(() => {
       this.pendingRequests.delete(messageId);
-      reject(new Error(`Message timeout: ${messageId}`));
+      reject(new Error(`Request timeout after ${this.timeout}ms: ${messageId}`));
     }, this.timeout);
 
-    this.pendingRequests.set(messageId, { resolve, reject, timeout });
+    this.pendingRequests.set(messageId, { resolve, reject, timeout: timeoutId });
 
+    // Return unregister function
     return () => {
-      clearTimeout(timeout);
-      this.pendingRequests.delete(messageId);
+      const request = this.pendingRequests.get(messageId);
+      if (request) {
+        clearTimeout(request.timeout);
+        this.pendingRequests.delete(messageId);
+      }
     };
   }
 
@@ -103,12 +68,9 @@ class MessageQueue {
   resolveRequest(messageId: string, data: any): void {
     const request = this.pendingRequests.get(messageId);
     if (request) {
-      console.log('[MessageQueue] RESOLVE REQUEST:', messageId, 'pending left:', this.pendingRequests.size - 1);
-      clearTimeout((request as any).timeout);
+      clearTimeout(request.timeout);
       request.resolve(data);
       this.pendingRequests.delete(messageId);
-    } else {
-      console.warn('[MessageQueue] RESOLVE REQUEST not found:', messageId);
     }
   }
 
@@ -118,8 +80,7 @@ class MessageQueue {
   rejectRequest(messageId: string, error: Error): void {
     const request = this.pendingRequests.get(messageId);
     if (request) {
-      console.warn('[MessageQueue] REJECT REQUEST:', messageId, 'error:', error.message);
-      clearTimeout((request as any).timeout);
+      clearTimeout(request.timeout);
       request.reject(error);
       this.pendingRequests.delete(messageId);
     }

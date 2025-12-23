@@ -57,13 +57,14 @@ export class PhysicsManager {
     this.carMesh = carMesh;
 
     try {
+      // Use BOX collider - must match car mesh bounds
       const carAggregate = new BABYLON.PhysicsAggregate(
         carMesh,
         BABYLON.PhysicsShapeType.BOX,
         {
           mass: PHYSICS_CONFIG.car.mass,
-          friction: 0.5,
-          restitution: 0.3,
+          friction: 1.0,
+          restitution: 0.1,
         },
         this.scene
       );
@@ -76,8 +77,10 @@ export class PhysicsManager {
         this.carBody.body.setMassProperties({
           inertia: new BABYLON.Vector3(0, 1, 0),
         });
-        // Disable gravity so car doesn't sink
-        this.carBody.body.setGravityFactor(0);
+        // Enable gravity
+        this.carBody.body.setGravityFactor(1);
+        // Disable sleeping to keep physics active
+        this.carBody.body.disablePreStep = false;
       }
 
       this.wheelMeshes = [...leftWheels, ...rightWheels];

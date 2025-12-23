@@ -16,20 +16,22 @@ let LoggingInterceptor = LoggingInterceptor_1 = class LoggingInterceptor {
         const request = context.switchToHttp().getRequest();
         const { method, url, body, query, params } = request;
         const userAgent = request.get('user-agent') || '';
-        const ip = request.ip;
+        const ip = request.ip || 'unknown';
         const now = Date.now();
         this.logger.log(`Incoming Request: ${method} ${url} - ${ip} - ${userAgent}`);
-        if (body && Object.keys(body).length) {
+        if (body && typeof body === 'object' && Object.keys(body).length > 0) {
             this.logger.debug(`Request Body: ${JSON.stringify(body)}`);
         }
-        if (query && Object.keys(query).length) {
+        if (query && typeof query === 'object' && Object.keys(query).length > 0) {
             this.logger.debug(`Query Params: ${JSON.stringify(query)}`);
         }
-        if (params && Object.keys(params).length) {
+        if (params &&
+            typeof params === 'object' &&
+            Object.keys(params).length > 0) {
             this.logger.debug(`Route Params: ${JSON.stringify(params)}`);
         }
         return next.handle().pipe((0, operators_1.tap)({
-            next: (data) => {
+            next: () => {
                 const response = context.switchToHttp().getResponse();
                 const { statusCode } = response;
                 const responseTime = Date.now() - now;
